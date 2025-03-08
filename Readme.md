@@ -22,7 +22,7 @@ Code and dataset coming soon! Stay tuned!
 
 
 ## Current Team Members
-[@Kunlun_Zhu](https://github.com/Kunlun-Zhu)(Ulab-UIUC), [@jiayi_Zhang](https://github.com/didiforgithub)(MetaGPT), [@Xiangxin_Zhou](https://github.com/zhouxiangxin1998), [@Yingxuan_Yang](https://github.com/zoe-yyx), [@Jiawei_Zhang](https://github.com/CharlieDreemur), [@Muxin_Tian](https://github.com/realtmxi), [@Haofei_Yu](Ulab-UIUC)(https://github.com/lwaekfjlk)
+[@Kunlun_Zhu](https://github.com/Kunlun-Zhu)(Ulab-UIUC), [@jiayi_Zhang](https://github.com/didiforgithub)(MetaGPT), [@Xiangxin_Zhou](https://github.com/zhouxiangxin1998), [@Yingxuan_Yang](https://github.com/zoe-yyx), [@Jiawei_Zhang](https://github.com/CharlieDreemur), [@Muxin_Tian](https://github.com/realtmxi), [@Haofei_Yu](https://github.com/lwaekfjlk)(Ulab-UIUC)
 
 ---
 
@@ -70,6 +70,6 @@ Please cite the following paper if you find OpenManus helpful!
   title        = {OpenManus-RL: Open Platform for Generalist LLM Reasoning Agents with RL optimization},
   year         = {2025},
   organization = {GitHub},
-  url          = {https://github.com/OpenManus/OpenManus},
+  url          = {https://github.com/OpenManus/OpenManus-RL},
 }
 ```
