@@ -52,6 +52,81 @@ Provide an RL fine-tuning approach for customizing the agent’s behavior in our
 4. Test on Agent Benchmarks
 Evaluate our framework on agentic benchmark such as Webshop, GAIA, OSWorld, AgentBench
 
+## Method
+
+Our method proposes an advanced reinforcement learning (RL)-based agent tuning framework designed to significantly enhance reasoning and decision-making capabilities of large language models (LLMs). Drawing inspiration from RAGEN's Reasoning-Interaction Chain Optimization (RICO), our approach further explores novel algorithmic structures, diverse reasoning paradigms, sophisticated reward strategies, and extensive benchmark environments.
+
+### Reasoning Models Exploration
+To benchmark the reasoning capabilities effectively, we evaluate multiple state-of-the-art reasoning models:
+- **GPT-O1**
+- **Deepseek-R1**
+- **QwQ-32B**
+
+Each model provides unique reasoning capabilities that inform downstream optimization and training strategies.
+
+### Alternative Rollout Strategies
+We experiment with a variety of rollout strategies to enhance agent planning efficiency and reasoning robustness, including:
+
+- **Tree-of-Thoughts (ToT)**: Employs tree-based reasoning paths, enabling agents to explore branching possibilities systematically.
+- **Graph-of-Thoughts (GoT)**: Utilizes graph structures to represent complex reasoning dependencies effectively.
+- **DFSDT (Depth-First Search Decision Trees)**: Optimizes action selection through depth-first search, enhancing long-horizon planning.
+- **Monte Carlo Tree Search (MCTS)**: Explores reasoning and decision paths probabilistically, balancing exploration and exploitation effectively.
+
+These methods help identify optimal rollout techniques for various reasoning tasks.
+
+### Diverse Reasoning Formats
+We specifically analyze and compare several reasoning output formats, notably:
+
+- **ReAct**: Integrates reasoning and action explicitly, encouraging structured decision-making.
+- **Outcome-based Reasoning**: Optimizes toward explicit outcome predictions, driving focused goal alignment.
+
+These formats are rigorously compared to derive the most effective reasoning representation for various tasks.
+
+### Extensive Environment Benchmarks
+We validate our methods comprehensively using diverse and challenging agent benchmarks, including:
+
+- [AgentBench](https://arxiv.org/abs/2308.03688)
+- [GAIA](https://arxiv.org/abs/2311.12983)
+- [WebShop](https://arxiv.org/abs/2207.01206)
+- [OSWorld](https://os-world.github.io/)
+- [AndroidWorld](https://openreview.net/forum?id=il5yUQsrjC)
+- [TheAgentCompany](https://github.com/OpenBMB/AgentVerse)
+
+This extensive benchmark suite ensures comprehensive evaluation of reasoning capabilities and generalizability across diverse real-world and simulated scenarios.
+
+### Post-Training Strategies
+We investigate multiple post-training methodologies to fine-tune agent reasoning effectively:
+
+- **Supervised Fine-Tuning (SFT)**: Initializes reasoning capabilities using human-annotated instructions.
+- **Generalized Reward-based Policy Optimization (GRPO)**: Incorporates:
+    - **Format-based Rewards**: Rewards adherence to specified reasoning structures.
+    - **Outcome-based Rewards**: Rewards accurate task completion and goal attainment.
+- **Proximal Policy Optimization (PPO)**: Enhances agent stability through proximal updates.
+- **Direct Preference Optimization (DPO)**: Leverages explicit human preferences to optimize agent outputs directly.
+- **Preference-based Reward Modeling (PRM)**: Uses learned reward functions derived from human preference data.
+
+### Training of Agent Reward Model
+We train specialized agent reward models using annotated data to accurately quantify nuanced reward signals. These models are then leveraged to guide agent trajectory selection during both training and evaluation phases.
+
+### Test-time Scaling of Trajectories
+During the inference phase, trajectory scaling methods are implemented, allowing agents to flexibly adapt to varying task complexities, thus enhancing robustness and performance in real-world scenarios.
+
+### Action Space Awareness and Strategic Exploration
+Agents are equipped with action-space awareness, employing systematic exploration strategies designed to navigate complex action spaces effectively, ultimately maximizing expected rewards.
+
+### Integration with RL Tuning Frameworks
+We integrate insights and methodologies from leading RL tuning frameworks, including:
+
+- **Verl**
+- **TinyZero**
+- **OpenR1**
+- **Trlx**
+
+Through these frameworks, agents can effectively balance exploration and exploitation, optimize reasoning processes, and adapt dynamically to novel environments.
+
+In summary, our method systematically integrates advanced reasoning paradigms, diverse rollout strategies, sophisticated reward modeling, and robust RL frameworks, significantly advancing the capability and adaptability of reasoning-enhanced LLM agents.
+
+
 # Related Work
 
 ## Agent tuning
