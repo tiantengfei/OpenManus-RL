@@ -52,13 +52,45 @@ Provide an RL fine-tuning approach for customizing the agent’s behavior in our
 4. Test on Agent Benchmarks
 Evaluate our framework on agentic benchmark such as Webshop, GAIA, OSWorld, AgentBench
 
+# Related Work
+
+## Agent tuning
+
+1. **Offline Training of Language Model Agents with Functions as Learnable Weights**. [[paper](https://arxiv.org/pdf/2402.11359)]
+2. **FIREACT : TOWARD LANGUAGE AGENT FINE-TUNING**. [[paper](https://arxiv.org/pdf/2310.05915)]
+3. **AgentTuning: Enabling Generalized Agent Abilities for LLMs**. [[paper](https://arxiv.org/pdf/2310.12823)]
+4. **ReAct Meets ActRe: When Language Agents Enjoy Training Data Autonomy**. [[paper](https://arxiv.org/pdf/2403.14589)]
+5. **UI-TARS: Pioneering Automated GUI Interaction with Native Agents**. [[paper](https://arxiv.org/pdf/2501.12326#page=16.83)]
+6. **ATLAS: Agent Tuning via Learning Critical Steps**. [[paper](https://arxiv.org/pdf/2503.02197)]
+
+## Tool using
+
+1. **Toolformer: Language Models Can Teach Themselves to Use Tools**. [[paper](https://arxiv.org/pdf/2302.04761)]
+2. **ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs**. [[paper](https://arxiv.org/abs/2307.16789)]
+
+## Agent tuning instruction dataset
+
+1. **Agent-FLAN: Designing Data and Methods of Effective Agent Tuning for Large Language Models**. [[paper](https://arxiv.org/pdf/2403.12881)]
+2. **AgentOhana: Design Unified Data and Training Pipeline for Effective Agent Learning**. [[paper](https://arxiv.org/pdf/2402.15506)]
+
+## RL tuning
+
+1. **Training Language Models to Follow Instructions with Human Feedback**. [[paper](https://arxiv.org/pdf/2305.18438)]
+2. **Deepseekmath: Pushing the Limits of Mathematical Reasoning in Open Language Models**. [[paper](https://proceedings.neurips.cc/paper_files/paper/2022/file/b1efde53be364a73914f58805a001731-Paper-Conference.pdf)]
+3. **DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning**. [[paper](https://arxiv.org/pdf/2501.12948)]
+
+
+## CodeBase
+
+1. **RAGEN: Training Agents by Reinforcing Reasoning**. [[code](https://github.com/ZihanWang314/RAGEN)]
+
 # Acknowledgement
 We extend our thanks to ulab-uiuc (https://ulab-uiuc.github.io/) and Openmanus (https://github.com/mannaandpoem/OpenManus)) team from MetaGPT for their support and shared knowledge. Their mission and community contributions help drive innovations like OpenManus forward.
 We welcome all developers who are interested in this project can reach out to (kunlunz2@illinois.edu)
 
 Stay tuned for updates and the official release of our repository. Together, let's build a thriving open-source agent ecosystem!
 
-## Community Group
+# Community Group
 
 Join our networking group on Wecgat and share your experience with other developers!
 
@@ -66,7 +98,7 @@ Join our networking group on Wecgat and share your experience with other develop
     <img src="assets/wechat-link.jpg" alt="OpenManus-RL 交流群" width="300" />
 </div>
 
-## Citation
+# Citation
 Please cite the following paper if you find OpenManus helpful!
 ```bibtex
 @misc{OpenManus,
