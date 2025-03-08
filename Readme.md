@@ -1,6 +1,19 @@
-# OpenManus
+# OpenManus-RL
 
 OpenManus is an open-source initiative that aims to build a robust agent ecosystem capable of harnessing various powerful tools—such as the MCP tool base and web browsing—to achieve sophisticated reasoning and execution. We draw inspiration from existing works like **OSWorld**, **open-interpretor**, and more. **Code coming soon**!
+
+# OpenManus-RL
+
+OpenManus-RL is an open-source initiative collaboratively led by **Ulab-UIUC** and **MetaGPT**.
+
+This project is an extended version of the original [@OpenManus](https://github.com/mannaandpoem/OpenManus) initiative. Inspired by successful RL tunning for reasoning LLM such as Deepseek-R1, QwQ-32B, we will explore new paradigms for RL-based LLM agent tuning, particularly building upon foundations.
+
+We are committed to regularly updating our exploration directions and results in a dynamic, live-streaming fashion. All progress, including rigorous testing on agent benchmarks such as GAIA, AgentBench, WebShop, and OSWorld, and tuned models, will be openly shared and continuously updated.
+
+We warmly welcome contributions from the broader community—join us in pushing the boundaries of agent reasoning and tool integration!
+
+Code and dataset coming soon! Stay tuned!
+
 
 ---
 
