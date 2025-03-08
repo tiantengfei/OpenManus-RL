@@ -53,6 +53,14 @@ We welcome all developers who are interested in this project can reach out to (k
 
 Stay tuned for updates and the official release of our repository. Together, let's build a thriving open-source agent ecosystem!
 
+## Community Group
+
+Join our networking group on Feishu and share your experience with other developers!
+
+<div align="center" style="display: flex; gap: 20px;">
+    <img src="assets/wechat.jpg" alt="OpenManus-RL 交流群" width="300" />
+</div>
+
 ## Citation
 Please cite the following paper if you find OpenManus helpful!
 ```bibtex
