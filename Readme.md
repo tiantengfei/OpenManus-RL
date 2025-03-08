@@ -12,9 +12,8 @@ OpenManus is an open-source initiative that aims to build a robust agent ecosyst
 
 
 
-## Team Members
-- **@Kunlun Zhu**
-- **@Haofei Yu**
+## Current Team Members
+[@Kunlun_Zhu](https://github.com/Kunlun-Zhu)(Ulab-UIUC), [@jiayi_Zhang](https://github.com/didiforgithub)(MetaGPT), [@Xiangxin_Zhou](https://github.com/zhouxiangxin1998), [@Yingxuan_Yang](https://github.com/zoe-yyx), [@Jiawei_Zhang](https://github.com/CharlieDreemur), [@Muxin_Tian](https://github.com/realtmxi), [@Haofei_Yu](Ulab-UIUC)(https://github.com/lwaekfjlk)
 
 ---
 
