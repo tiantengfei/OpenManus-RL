@@ -122,6 +122,11 @@ Through these frameworks, agents can effectively balance exploration and exploit
 
 In summary, our method systematically integrates advanced reasoning paradigms, diverse rollout strategies, sophisticated reward modeling, and robust RL frameworks, significantly advancing the capability and adaptability of reasoning-enhanced LLM agents.
 
+<div style="display: flex; justify-content: center;">
+  <div style="width: 100; transform: scale(1.0);">
+    <img src="assets/method_overview.png" style="width: 100%;" alt="marble">
+  </div>
+</div>
 
 # Related Work
 
