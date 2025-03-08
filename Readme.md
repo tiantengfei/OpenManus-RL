@@ -47,8 +47,8 @@ Stay tuned for updates and the official release of our repository. Together, let
 Please cite the following paper if you find OpenManus helpful!
 ```bibtex
 @misc{OpenManus,
-  author       = {Kunlun Zhu, Haofei Yu, Jiaxuan You},
-  title        = {OpenManus: Open Platform for Generalist Reasoning Agents},
+  author       = {OpenManus-RL Team},
+  title        = {OpenManus-RL: Open Platform for Generalist LLM Reasoning Agents with RL optimization},
   year         = {2025},
   organization = {GitHub},
   url          = {https://github.com/OpenManus/OpenManus},
