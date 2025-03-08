@@ -82,18 +82,6 @@ We specifically analyze and compare several reasoning output formats, notably:
 
 These formats are rigorously compared to derive the most effective reasoning representation for various tasks.
 
-### Extensive Environment Benchmarks
-We validate our methods comprehensively using diverse and challenging agent benchmarks, including:
-
-- [AgentBench](https://arxiv.org/abs/2308.03688)
-- [GAIA](https://arxiv.org/abs/2311.12983)
-- [WebShop](https://arxiv.org/abs/2207.01206)
-- [OSWorld](https://os-world.github.io/)
-- [AndroidWorld](https://openreview.net/forum?id=il5yUQsrjC)
-- [TheAgentCompany](https://github.com/OpenBMB/AgentVerse)
-
-This extensive benchmark suite ensures comprehensive evaluation of reasoning capabilities and generalizability across diverse real-world and simulated scenarios.
-
 ### Post-Training Strategies
 We investigate multiple post-training methodologies to fine-tune agent reasoning effectively:
 
