@@ -19,6 +19,10 @@ Code and dataset coming soon! Stay tuned!
   </div>
 </div>
 
+## 🔔 News
+
+- **[2025-03-08]** 🎉 We are collaboration with [@OpenManus](https://github.com/mannaandpoem/OpenManus) from Metagpt to work on this project together!
+- **[2025-03-06]** 🥳 We(UIUC-Ulab) are announcing our live-streaming project, OpenManus-RL.
 
 
 ## Current Team Members
