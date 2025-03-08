@@ -52,6 +52,14 @@ Provide an RL fine-tuning approach for customizing the agent’s behavior in our
 4. Test on Agent Benchmarks
 Evaluate our framework on agentic benchmark such as Webshop, GAIA, OSWorld, AgentBench
 
+
+
+<div style="display: flex; justify-content: center;">
+  <div style="width: 100; transform: scale(1.0);">
+    <img src="assets/openmanus-roadmap.png" style="width: 100%;" alt="marble">
+  </div>
+</div>
+
 ## Method
 
 Our method proposes an advanced reinforcement learning (RL)-based agent tuning framework designed to significantly enhance reasoning and decision-making capabilities of large language models (LLMs). Drawing inspiration from RAGEN's Reasoning-Interaction Chain Optimization (RICO), our approach further explores novel algorithmic structures, diverse reasoning paradigms, sophisticated reward strategies, and extensive benchmark environments.
