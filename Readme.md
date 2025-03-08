@@ -29,25 +29,26 @@ Code and dataset coming soon! Stay tuned!
 # How to Contribute
 We wholeheartedly welcome suggestions, feedback, and contributions from the community! Feel free to:
 
+We welcome contributions, including fine-tuning codebase, tuning dataset, environment setup, and computing resources.
 Create issues for feature requests, bug reports, or ideas.
-Submit pull requests to help improve OpenManus.
+Submit pull requests to help improve OpenManus-RL.
 Or simply reach out to us for direct collaboration.
 
 # Roadmap
-1. Web Environment Support
-Integrate the ability to browse the web and interact with external resources seamlessly.
+1. Agent Environment Support
+Setting up LLM agent environment for online RL tunning.
 
-2. Advanced Reasoning Models
-Connect to specialized reasoning models such as deepseek-r1 for more complex inference tasks.
+2. Agent Trajectories Data Collection
+Connect to specialized reasoning models such as deepseek-r1, QwQ-32B for more complex inference tasks to collect comprehensive agent trajectories.
 
-3. Test on Agent Benchmarks
+3. RL-Tuning Model Paradigm
+Provide an RL fine-tuning approach for customizing the agent’s behavior in our agent environment.
+
+4. Test on Agent Benchmarks
 Evaluate our framework on agentic benchmark such as Webshop, GAIA, OSWorld, AgentBench
 
-4. RL-Tuning Model Paradigm
-Provide an RL fine-tuning approach for customizing the agent’s behavior in various real-world applications.
-
 # Acknowledgement
-We extend our thanks to ulab-uiuc (https://ulab-uiuc.github.io/) for their support and shared knowledge. Their mission and community contributions help drive innovations like OpenManus forward.
+We extend our thanks to ulab-uiuc (https://ulab-uiuc.github.io/) and Openmanus (https://github.com/mannaandpoem/OpenManus)) team from MetaGPT for their support and shared knowledge. Their mission and community contributions help drive innovations like OpenManus forward.
 We welcome all developers who are interested in this project can reach out to (kunlunz2@illinois.edu)
 
 Stay tuned for updates and the official release of our repository. Together, let's build a thriving open-source agent ecosystem!
