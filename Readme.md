@@ -33,6 +33,7 @@ We welcome contributions, including fine-tuning codebase, tuning dataset, enviro
 Create issues for feature requests, bug reports, or ideas.
 Submit pull requests to help improve OpenManus-RL.
 Or simply reach out to us for direct collaboration.
+Important contributors will be listed as co-authors to our paper. 
 
 # Roadmap
 1. Agent Environment Support
@@ -55,10 +56,10 @@ Stay tuned for updates and the official release of our repository. Together, let
 
 ## Community Group
 
-Join our networking group on Feishu and share your experience with other developers!
+Join our networking group on Wecgat and share your experience with other developers!
 
 <div align="center" style="display: flex; gap: 20px;">
-    <img src="assets/wechat.jpg" alt="OpenManus-RL 交流群" width="300" />
+    <img src="assets/wechat-link.jpg" alt="OpenManus-RL 交流群" width="300" />
 </div>
 
 ## Citation
