@@ -26,7 +26,7 @@ Code and dataset coming soon! Stay tuned!
 
 
 ## Current Team Members
-[@Kunlun_Zhu](https://github.com/Kunlun-Zhu)(Ulab-UIUC), [@jiayi_Zhang](https://github.com/didiforgithub)(MetaGPT), [@Xiangxin_Zhou](https://github.com/zhouxiangxin1998), [@Yingxuan_Yang](https://github.com/zoe-yyx), [@Jiawei_Zhang](https://github.com/CharlieDreemur), [@Muxin_Tian](https://github.com/realtmxi), [@Haofei_Yu](https://github.com/lwaekfjlk)(Ulab-UIUC)
+[@Kunlun Zhu](https://github.com/Kunlun-Zhu)(Ulab-UIUC), [@jiayi Zhang](https://github.com/didiforgithub)(MetaGPT), [@Xiangxin Zhou](https://github.com/zhouxiangxin1998), [@Yanfei Zhang](https://github.com/yanfei-zhang-95), [@Yingxuan Yang](https://github.com/zoe-yyx), [@Jiawei Zhang](https://github.com/CharlieDreemur), [@Muxin Tian](https://github.com/realtmxi), [@Haofei Yu](https://github.com/lwaekfjlk)(Ulab-UIUC)
 
 ---
 
