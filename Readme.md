@@ -11,6 +11,33 @@ We warmly welcome contributions from the broader community—join us in pushing 
 Code and dataset coming soon! Stay tuned!
 
 
+## 📖 Table of Contents
+
+- [OpenManus-RL](#openmanus-rl)
+  - [🔔 News](#-news)
+  - [Current Team Members](#current-team-members)
+  - [How to Contribute](#how-to-contribute)
+  - [Roadmap](#roadmap)
+  - [Method](#method)
+    - [Reasoning Models Exploration](#reasoning-models-exploration)
+    - [Alternative Rollout Strategies](#alternative-rollout-strategies)
+    - [Environment and Benchmark](#environment-and-benchmark)
+    - [Post-Training Strategies](#post-training-strategies)
+    - [Training of Agent Reward Model](#training-of-agent-reward-model)
+    - [Test-time Scaling of Trajectories](#test-time-scaling-of-trajectories)
+    - [Action Space Awareness and Strategic Exploration](#action-space-awareness-and-strategic-exploration)
+    - [Integration with RL Tuning Frameworks](#integration-with-rl-tuning-frameworks)
+- [Related Work](#related-work)
+  - [Agent tuning](#agent-tuning)
+  - [Tool using](#tool-using)
+  - [Agent tuning instruction dataset](#agent-tuning-instruction-dataset)
+  - [RL tuning](#rl-tuning)
+  - [Benchmark](#benchmark)
+  - [Similar Code](#similar-code)
+- [Acknowledgement](#acknowledgement)
+- [Community Group](#community-group)
+- [Citation](#citation)
+
 ---
 
 <div style="display: flex; justify-content: center;">
@@ -21,7 +48,7 @@ Code and dataset coming soon! Stay tuned!
 
 ## 🔔 News
 
-- **[2025-03-08]** 🎉 We are collaboration with [@OpenManus](https://github.com/mannaandpoem/OpenManus) from Metagpt to work on this project together!
+- **[2025-03-08]** 🎉 We are collaborating with [@OpenManus](https://github.com/mannaandpoem/OpenManus) from Metagpt to work on this project together!
 - **[2025-03-06]** 🥳 We(UIUC-Ulab) are announcing our live-streaming project, OpenManus-RL.
 
 
@@ -194,3 +221,14 @@ Please cite the following paper if you find OpenManus helpful!
   url          = {https://github.com/OpenManus/OpenManus-RL},
 }
 ```
+
+<p align="center">
+<a href="https://star-history.com/#Significant-Gravitas/AutoGPT">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=OpenManus/OpenManus-RL&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=OpenManus/OpenManus-RL&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Significant-Gravitas/AutoGPT&type=Date" />
+  </picture>
+</a>
+</p>
+
