@@ -160,7 +160,7 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
 
 ## OpenManus-RL
 
-A simplified library for Supervised Fine-Tuning (SFT) and GRPO tunning of language models. (developed upon [Open-R1](https://github.com/huggingface/open-r1) from huggingface)
+A simplified library for Supervised Fine-Tuning (SFT) and GRPO tunning of language models for agentic system. (developed upon [Open-R1](https://github.com/huggingface/open-r1) from huggingface)
 We are still laboriously developing this part, welcome feedback.
 
 ## Installation
