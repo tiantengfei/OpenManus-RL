@@ -32,6 +32,7 @@ Code and dataset coming soon! Stay tuned!
     - [Test-time Scaling of Trajectories](#test-time-scaling-of-trajectories)
     - [Action Space Awareness and Strategic Exploration](#action-space-awareness-and-strategic-exploration)
     - [Integration with RL Tuning Frameworks](#integration-with-rl-tuning-frameworks)
+- [Running](#Running)
 - [Related Work](#related-work)
   - [Agent tuning](#agent-tuning)
   - [Tool using](#tool-using)
@@ -154,6 +155,111 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
     <img src="assets/method_overview.png" style="width: 100%;" alt="marble">
   </div>
 </div>
+
+# Running
+
+## OpenManus-RL
+
+A simplified library for Supervised Fine-Tuning (SFT) and GRPO tunning of language models. (developed upon [Open-R1](https://github.com/huggingface/open-r1) from huggingface)
+
+## Installation
+
+First, create a conda environment and activate it:
+
+```bash
+conda create -n openmanus-rl python=3.10
+conda activate openmanus-rl
+```
+
+Then, install the required dependencies:
+
+
+```bash
+pip install -r requirements.txt
+```
+
+Supervised Fine-Tuning (SFT)
+
+Basic Usage
+
+To fine-tune a model on a single GPU:
+
+
+```bash
+python -m openmanus_rl.sft \
+    --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
+    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --learning_rate 2.0e-5 \
+    --num_train_epochs 1 \
+    --packing \
+    --max_seq_length 4096 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --gradient_checkpointing \
+    --bf16 \
+    --logging_steps 5 \
+    --output_dir data/sft-output
+```
+
+Distributed Training with Accelerate
+
+For multi-GPU training using Accelerate:
+
+
+```bash
+accelerate launch --config_file=configs/accelerate_configs/zero3.yaml openmanus_rl/sft.py \
+    --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
+    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --learning_rate 2.0e-5 \
+    --num_train_epochs 1 \
+    --packing \
+    --max_seq_length 4096 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --gradient_checkpointing \
+    --bf16 \
+    --logging_steps 5 \
+    --output_dir data/sft-output
+```
+
+## Gradient-based Reinforcement for Policy Optimization (GRPO) for agent tunning
+Basic Usage
+To fine-tune a model using GRPO on a single GPU:
+
+```bash
+python -m openmanus_rl.grpo \
+    --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
+    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --learning_rate 2.0e-5 \
+    --num_train_epochs 1 \
+    --max_seq_length 4096 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --gradient_checkpointing \
+    --bf16 \
+    --reward_funcs accuracy format tag_count \
+    --logging_steps 5 \
+    --output_dir data/grpo-output
+```
+Distributed Training with Accelerate
+For multi-GPU training using Accelerate:
+
+```bash
+accelerate launch --config_file=configs/accelerate_configs/zero3.yaml openmanus_rl/grpo.py \
+    --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
+    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --learning_rate 2.0e-5 \
+    --num_train_epochs 1 \
+    --max_seq_length 4096 \
+    --per_device_train_batch_size 2 \
+    --gradient_accumulation_steps 8 \
+    --gradient_checkpointing \
+    --bf16 \
+    --reward_funcs accuracy format tag_count \
+    --logging_steps 5 \
+    --output_dir data/grpo-output
+```
+
 
 # Related Work
 
