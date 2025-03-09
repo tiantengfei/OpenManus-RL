@@ -10,6 +10,11 @@ We warmly welcome contributions from the broader community—join us in pushing 
 
 Code and dataset coming soon! Stay tuned!
 
+<div style="display: flex; justify-content: center;">
+  <div style="width: 100; transform: scale(1.0);">
+    <img src="assets/manus.jpg" style="width: 100%;" alt="marble">
+  </div>
+</div>
 
 ## 📖 Table of Contents
 
@@ -40,11 +45,6 @@ Code and dataset coming soon! Stay tuned!
 
 ---
 
-<div style="display: flex; justify-content: center;">
-  <div style="width: 100; transform: scale(1.0);">
-    <img src="assets/manus.jpg" style="width: 100%;" alt="marble">
-  </div>
-</div>
 
 ## 🔔 News
 
