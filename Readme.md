@@ -35,7 +35,7 @@ Code and dataset coming soon! Stay tuned!
     - [Integration with RL Tuning Frameworks](#integration-with-rl-tuning-frameworks)
   - [Dataset](#dataset)
     - [Dataset Overbiew](#dataset-overview)
-    - [Data Instance](#data-instance)
+    - [Data Instances](#data-instances)
 - [Running](#Running)
 - [Related Work](#related-work)
   - [Agent tuning](#agent-tuning)
