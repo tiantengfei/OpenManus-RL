@@ -34,6 +34,8 @@ Code and dataset coming soon! Stay tuned!
     - [Action Space Awareness and Strategic Exploration](#action-space-awareness-and-strategic-exploration)
     - [Integration with RL Tuning Frameworks](#integration-with-rl-tuning-frameworks)
   - [Dataset](#dataset)
+    - [Dataset Overbiew](#dataset-overview)
+    - [Data Instance](#data-instance)
 - [Running](#Running)
 - [Related Work](#related-work)
   - [Agent tuning](#agent-tuning)
@@ -166,7 +168,7 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
 - 🚫 **Anti-Hallucination** - Negative samples + environment grounding
 - 🌐 **6 Domains** - OS, DB, Web, KG, Household, E-commerce
 
-## Dataset Composition
+## Dataset Overview
 
 | Source | Trajectories | Avg Turns | Key Features |
 |--------|--------------|-----------|--------------|
