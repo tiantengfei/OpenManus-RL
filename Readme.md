@@ -33,6 +33,7 @@ Code and dataset coming soon! Stay tuned!
     - [Test-time Scaling of Trajectories](#test-time-scaling-of-trajectories)
     - [Action Space Awareness and Strategic Exploration](#action-space-awareness-and-strategic-exploration)
     - [Integration with RL Tuning Frameworks](#integration-with-rl-tuning-frameworks)
+  - [Dataset](#dataset)
 - [Running](#Running)
 - [Related Work](#related-work)
   - [Agent tuning](#agent-tuning)
@@ -156,6 +157,44 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
     <img src="assets/method_overview.png" style="width: 100%;" alt="marble">
   </div>
 </div>
+
+# Dataset
+[**OpenManusRL-Dataset**](https://huggingface.co/datasets/CharlieDreemur/OpenManus-RL) combines agent trajectories from [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) and [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) with features:
+
+- 🔍 **ReAct Framework** - <a href="https://react-lm.github.io/" target="_blank">Reasoning-Acting integration</a>
+- 🧠 **Structured Training** - Separate format/reasoning learning
+- 🚫 **Anti-Hallucination** - Negative samples + environment grounding
+- 🌐 **6 Domains** - OS, DB, Web, KG, Household, E-commerce
+
+## Dataset Composition
+
+| Source | Trajectories | Avg Turns | Key Features |
+|--------|--------------|-----------|--------------|
+| [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) | 1,866 | 5.24 | Multi-task QA |
+| [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) | 3,000+ | 3-35 | Error recovery patterns |
+| **Combined** | 4,866+ | 4-20 | Enhanced generalization |
+
+### Supported Tasks
+- **text-generation**: ReAct-style instruction following
+- **conversational-ai**: Tool-augmented dialogues
+
+### Languages
+English
+
+## Data Instances
+
+**ReAct Pattern Example**:
+```json
+{
+  "id": "os_0",
+  "conversations": [
+    {"role": "user", "content": "Count files in /etc"},
+    {"role": "assistant", "content": "Think: Need reliable counting method\nAct: bash\n```bash\nls -1 /etc | wc -l\n```"},
+    {"role": "user", "content": "OS Output: 220"},
+    {"role": "assistant", "content": "Think: Verified through execution\nAct: answer(220)"}
+  ]
+}
+```
 
 # Running
 
