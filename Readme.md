@@ -48,7 +48,7 @@ Code and dataset coming soon! Stay tuned!
 
 
 ## 🔔 News
-
+- **[2025-03-09]** 🍺 We collect and opensource our Agent SFT dataset at [Huggingface](https://huggingface.co/datasets/CharlieDreemur/OpenManus-RL), go try it!
 - **[2025-03-08]** 🎉 We are collaborating with [@OpenManus](https://github.com/mannaandpoem/OpenManus) from Metagpt to work on this project together!
 - **[2025-03-06]** 🥳 We(UIUC-Ulab) are announcing our live-streaming project, OpenManus-RL.
 
@@ -189,7 +189,7 @@ To fine-tune a model on a single GPU:
 ```bash
 python -m openmanus_rl.sft \
     --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --dataset_name CharlieDreemur/OpenManus-RL \
     --learning_rate 2.0e-5 \
     --num_train_epochs 1 \
     --packing \
@@ -210,7 +210,7 @@ For multi-GPU training using Accelerate:
 ```bash
 accelerate launch --config_file=configs/accelerate_configs/zero3.yaml openmanus_rl/sft.py \
     --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --dataset_name CharlieDreemur/OpenManus-RL \
     --learning_rate 2.0e-5 \
     --num_train_epochs 1 \
     --packing \
@@ -230,7 +230,7 @@ To fine-tune a model using GRPO on a single GPU:
 ```bash
 python -m openmanus_rl.grpo \
     --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --dataset_name CharlieDreemur/OpenManus-RL-GRPO \
     --learning_rate 2.0e-5 \
     --num_train_epochs 1 \
     --max_seq_length 4096 \
@@ -248,7 +248,7 @@ For multi-GPU training using Accelerate:
 ```bash
 accelerate launch --config_file=configs/accelerate_configs/zero3.yaml openmanus_rl/grpo.py \
     --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset_name HuggingFaceH4/Bespoke-Stratos-17k \
+    --dataset_name CharlieDreemur/OpenManus-RL-GRPO \
     --learning_rate 2.0e-5 \
     --num_train_epochs 1 \
     --max_seq_length 4096 \
