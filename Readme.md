@@ -69,7 +69,7 @@ We welcome contributions, including fine-tuning codebase, tuning dataset, enviro
 Create issues for feature requests, bug reports, or ideas.
 Submit pull requests to help improve OpenManus-RL.
 Or simply reach out to us for direct collaboration.
-Important contributors will be listed as co-authors to our paper. 
+Important contributors will be listed as co-authors to our paper.
 
 # Roadmap
 1. Agent Environment Support
@@ -380,4 +380,3 @@ Please cite the following paper if you find OpenManus helpful!
   </picture>
 </a>
 </p>
-

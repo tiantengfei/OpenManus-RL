@@ -42,6 +42,7 @@ import transformers
 from datasets import load_dataset
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
+from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 
 from .configs import GRPOConfig
 from .rewards import (
@@ -55,8 +56,6 @@ from .rewards import (
     tag_count_reward,
 )
 from .utils import get_tokenizer
-from trl import GRPOTrainer, ModelConfig, ScriptArguments, TrlParser, get_peft_config
-
 
 logger = logging.getLogger(__name__)
 

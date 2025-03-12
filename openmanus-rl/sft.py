@@ -42,9 +42,6 @@ import transformers
 from datasets import load_dataset
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
-
-from .utils import get_tokenizer
-from .configs import SFTConfig
 from trl import (
     ModelConfig,
     ScriptArguments,
@@ -55,6 +52,8 @@ from trl import (
     get_quantization_config,
 )
 
+from .configs import SFTConfig
+from .utils import get_tokenizer
 
 logger = logging.getLogger(__name__)
 

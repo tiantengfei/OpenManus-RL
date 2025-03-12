@@ -26,7 +26,6 @@ from math_verify import LatexExtractionConfig, parse, verify
 
 from .utils import is_e2b_available
 
-
 if is_e2b_available():
     from dotenv import load_dotenv
     from e2b_code_interpreter import AsyncSandbox
@@ -396,11 +395,11 @@ def code_reward(completions, **kwargs) -> list[float]:
 
 def get_trajectories_format_reward(min_steps: int = 3, partial_reward: bool = True):
     """Reward function that checks if the reasoning process follows the ReAct (Reasoning and Acting) format.
-    
+
     Args:
         min_steps: Minimum number of reasoning steps required for full reward.
         partial_reward: If True, provide partial rewards for partially correct formats.
-        
+
     Returns:
         A reward function that evaluates compliance with the ReAct format.
     """
@@ -408,33 +407,33 @@ def get_trajectories_format_reward(min_steps: int = 3, partial_reward: bool = Tr
     thought_pattern = r"Thought:[\s\S]+?"
     action_pattern = r"Action:[\s\S]+?"
     observation_pattern = r"Observation:[\s\S]+?"
-    
+
     # Full ReAct step pattern (all three components)
     react_step_pattern = rf"({thought_pattern}{action_pattern}{observation_pattern})"
-    
+
     # Final answer pattern
     final_answer_pattern = r"Answer:[\s\S]+"
 
     def trajectories_format_reward(completions, **kwargs):
         """Evaluates if completions follow the ReAct format with proper Thought/Action/Observation sequences.
-        
+
         Args:
             completions: List of model completions
-            
+
         Returns:
             List of rewards between 0.0 and 1.0 based on format compliance
         """
         contents = [completion[0]["content"] for completion in completions]
         rewards = []
-        
+
         for content in contents:
             # Count full ReAct steps (Thought/Action/Observation sequences)
             react_steps = re.findall(react_step_pattern, content)
             num_steps = len(react_steps)
-            
+
             # Check for final answer
             has_final_answer = bool(re.search(final_answer_pattern, content))
-            
+
             if num_steps >= min_steps and has_final_answer:
                 # Full reward for meeting minimum steps and having final answer
                 rewards.append(1.0)
@@ -444,19 +443,19 @@ def get_trajectories_format_reward(min_steps: int = 3, partial_reward: bool = Tr
             else:
                 # Partial rewards based on components present
                 reward = 0.0
-                
+
                 # Reward for steps (up to 0.7)
                 step_reward = min(0.7, (num_steps / min_steps) * 0.7)
                 reward += step_reward
-                
+
                 # Reward for final answer (0.3)
                 if has_final_answer:
                     reward += 0.3
-                
+
                 rewards.append(reward)
-                
+
         return rewards
-    
+
     return trajectories_format_reward
 
 def get_code_format_reward(language: str = "python"):
