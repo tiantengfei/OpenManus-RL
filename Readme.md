@@ -161,20 +161,20 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
 </div>
 
 # Dataset
-[**OpenManusRL-Dataset**](https://huggingface.co/datasets/CharlieDreemur/OpenManus-RL) combines agent trajectories from [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) and [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) with features:
+[**OpenManusRL-Dataset**](https://huggingface.co/datasets/CharlieDreemur/OpenManus-RL) combines agent trajectories from [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct), [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) and [AgentTraj-L(AgentGym)] with features:
 
 - 🔍 **ReAct Framework** - <a href="https://react-lm.github.io/" target="_blank">Reasoning-Acting integration</a>
 - 🧠 **Structured Training** - Separate format/reasoning learning
 - 🚫 **Anti-Hallucination** - Negative samples + environment grounding
 - 🌐 **6 Domains** - OS, DB, Web, KG, Household, E-commerce
 
-## Dataset Overview
-
+### Dataset Composition
 | Source | Trajectories | Avg Turns | Key Features |
 |--------|--------------|-----------|--------------|
-| [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) | 1,866 | 5.24 | 	Multi-task QA, CoT reasoning |
-| [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) | 34,442 | 3-35 | Error recovery patterns, diverse real-world tasks |
-| **Combined** | 36,308 | 4-20 | Enhanced generalization, broader task coverage |
+| [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) | 1,866 | 5.24 | Multi-task QA, CoT reasoning |
+| [Agent-FLAN](https://huggingface.co/datasets/internlm/Agent-FLAN) | 34442 | 3-35 | Error recovery patterns, diverse real-world tasks|
+  [AgentTraj-L](https://huggingface.co/datasets/AgentGym/AgentTraj-L) | 14485 | 3-35 | interactive environments and tasks
+| **Combined** | 50793 | 4-20 | Enhanced generalization, uniform format with broader task coverage |
 
 ### Supported Tasks
 - **text-generation**: ReAct-style instruction following
