@@ -168,7 +168,7 @@ In summary, our method systematically integrates advanced reasoning paradigms, d
 - 🚫 **Anti-Hallucination** - Negative samples + environment grounding
 - 🌐 **6 Domains** - OS, DB, Web, KG, Household, E-commerce
 
-### Dataset Composition
+### Dataset Overview
 | Source | Trajectories | Avg Turns | Key Features |
 |--------|--------------|-----------|--------------|
 | [AgentInstruct](https://huggingface.co/datasets/THUDM/AgentInstruct) | 1,866 | 5.24 | Multi-task QA, CoT reasoning |
