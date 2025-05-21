@@ -519,7 +519,7 @@ class OpenManusAgent:
             # Extract trajectory and other info
             trajectory = result_dict.get('trajectory', [])
             # Choose which reward signal to use for allocation
-            reward_to_distribute = result_dict.get('env_score', 0.0)
+            reward_to_distribute = result_dict.get('reward', 0.0)
 
             turns = result_dict.get('turns', 0)
             task_idx = result_dict.get('task_idx', -1)
