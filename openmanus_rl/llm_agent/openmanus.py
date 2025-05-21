@@ -206,6 +206,14 @@ class OpenManusAgent:
             initial_obs_text = client.observe()
             # print(f"[Agent._run_single_rollout][{task_idx}] Initial Obs: {initial_obs_text[:100]}...")
 
+            # --- Handle OpenManus next_prompt for initial observation ---
+            # Assume reset_info might contain 'next_prompt' from OpenManus environment
+            if reset_info and isinstance(reset_info, dict):
+                openmanus_initial_next_prompt = reset_info.get('next_prompt')
+                if openmanus_initial_next_prompt and isinstance(openmanus_initial_next_prompt, str):
+                    initial_obs_text += " " + openmanus_initial_next_prompt
+                    print(f"[Agent._run_single_rollout][{task_idx}] Appended initial next_prompt from reset_info.")
+
             # Handle initial observation
             if not initial_obs_text:
                 # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Received empty initial observation. Using initial prompt from batch.")
@@ -293,7 +301,10 @@ class OpenManusAgent:
                 next_obs_text = step_output.state
                 reward = step_output.reward
                 done = step_output.done
-                info = {} # Initialize info as empty dict, as StepOutput doesn't explicitly return it
+                # Attempt to get info from step_output, otherwise use an empty dict
+                info = getattr(step_output, 'info', {}) 
+                if not isinstance(info, dict): # Ensure info is a dictionary
+                    info = {}
                 print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Env Step Result: Reward={reward}, Done={done}, Info={info}")
 
                 # Store the reward from this specific step
@@ -308,7 +319,13 @@ class OpenManusAgent:
 
                 # Process next observation
                 if not done:
-                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs: {next_obs_text[:100]}...")
+                    # --- Handle OpenManus next_prompt for subsequent observations ---
+                    openmanus_step_next_prompt = info.get('next_prompt')
+                    if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
+                        next_obs_text += " " + openmanus_step_next_prompt
+                        print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Appended next_prompt from step_output.info.")
+                    
+                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
                     trajectory.append({"from": "env", "value": next_obs_text})
                     next_obs_ids = self.tokenizer(next_obs_text, return_tensors='pt', add_special_tokens=False)['input_ids']
                     # Ensure tensors are concatenated on the same device (e.g., CPU or model's device if needed later)
@@ -833,27 +850,38 @@ class OpenManusAgent:
         actions = []
         contents = []
 
+        # Regex for the new tool_call format
+        tool_call_pattern = r'(.*?)<tool_call>(.*?)</tool_call>'
+        # Regex for existing formats
+        action_pattern = r'<action>(.*?)</action>'
+        response_pattern = r'<response>(.*?)</response>'
+
         for prediction in predictions:
             if isinstance(prediction, str):
-                # Extract action or response tags
-                action_pattern = r'<action>(.*?)</action>'
-                response_pattern = r'<response>(.*?)</response>'
-
+                tool_call_match = re.search(tool_call_pattern, prediction, re.DOTALL)
                 action_match = re.search(action_pattern, prediction, re.DOTALL)
                 response_match = re.search(response_pattern, prediction, re.DOTALL)
 
-                if action_match:
+                if tool_call_match:
+                    # New format: <tool_call>
+                    # content_str = tool_call_match.group(1).strip() # Not explicitly returned as per requirement
+                    function_json = tool_call_match.group(2).strip()
+                    actions.append('tool_call')
+                    contents.append(function_json)
+                elif action_match:
+                    # Existing format: <action>
                     actions.append('action')
                     contents.append(action_match.group(1).strip())
                 elif response_match:
+                    # Existing format: <response>
                     actions.append('response')
                     contents.append(response_match.group(1).strip())
                 else:
-                    # If no recognized tag, assume it's neither a specific action nor response
+                    # If no recognized tag
                     actions.append(None)
                     contents.append('') # Return empty content if no tag found
             else:
-                # Handle non-string predictions if necessary, e.g., raise error or log warning
+                # Handle non-string predictions
                 print(f"[Warning] Received non-string prediction: {type(prediction)}. Cannot process.")
                 actions.append(None)
                 contents.append('')
