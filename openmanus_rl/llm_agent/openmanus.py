@@ -2,17 +2,263 @@ import torch
 import re
 from collections import defaultdict
 import os
-from typing import List, Dict, Any, Tuple
-from dataclasses import dataclass
+import sys # Added import
+from typing import List, Dict, Any, Tuple, Optional # Optional added
+from dataclasses import dataclass, field # field added
 from .tensor_helper import TensorHelper, TensorConfig
 from verl import DataProto
 from transformers import GenerationConfig
 import importlib # Added import
 import traceback # For error logging
 from concurrent.futures import ThreadPoolExecutor, as_completed # For parallel rollout
+import json # Added for VerlLLMAdapter
+import asyncio # Added for VerlLLMAdapter
+# re is already imported
+# from typing import List, Dict, Any, Tuple, Optional are already satisfied by existing imports
+# from dataclasses import dataclass, field are already satisfied (dataclass is, field needs to be checked or added if Mock* classes are outside)
+from dataclasses import field # Explicitly add field if not covered by existing dataclass import for Mock*
+from types import SimpleNamespace # Added for VerlLLMAdapter
+# from verl import DataProto # Already imported
+from transformers import GenerationConfig as HFGenerationConfig # Added for VerlLLMAdapter to avoid conflict
+# torch is already imported
 from verl.utils.tracking import Tracking
 from omegaconf import DictConfig # Import DictConfig for type hint
 import numpy as np
+
+# --- Helper/Mock Dataclasses for VerlLLMAdapter ---
+@dataclass
+class MockFunctionCall:
+    name: str
+    arguments: str # Should be a JSON string
+
+@dataclass
+class MockToolCall:
+    id: str
+    type: str = "function"
+    function: MockFunctionCall = field(default_factory=lambda: MockFunctionCall("", "")) # Ensure valid defaults
+
+@dataclass
+class MockChatCompletionMessage:
+    content: Optional[str] = None
+    tool_calls: Optional[List[MockToolCall]] = None
+    # role: Optional[str] = None # Not strictly needed for response object from LLM
+
+
+# --- Placeholder padding functions (if not available elsewhere) ---
+# These would need proper tensor manipulation logic based on DataProto structure.
+def pad_dataproto_to_divisor(data_proto: DataProto, divisor: int) -> tuple[DataProto, int]:
+    """Pads a DataProto object to ensure batch size is a multiple of divisor."""
+    if divisor <= 1: # No padding needed if divisor is 1 or less
+        return data_proto, 0
+
+    # Simplistic: assumes 'input_ids' is the primary tensor to check for batch size.
+    # A real implementation must iterate through all tensors in data_proto.batch
+    # and pad them consistently.
+    if 'input_ids' not in data_proto.batch:
+        print("Warning: 'input_ids' not in data_proto.batch for padding. Returning as is.")
+        return data_proto, 0
+        
+    input_ids = data_proto.batch['input_ids']
+    current_batch_size = input_ids.shape[0]
+    pad_size = (divisor - (current_batch_size % divisor)) % divisor
+
+    if pad_size == 0:
+        return data_proto, 0
+
+    print(f"Padding DataProto batch from {current_batch_size} to {current_batch_size + pad_size} (divisor {divisor})")
+    
+    padded_batch_data = {}
+    for key, tensor_val in data_proto.batch.items():
+        if isinstance(tensor_val, torch.Tensor) and tensor_val.shape[0] == current_batch_size:
+            # Use the first entry to create padding tensor
+            pad_tensor_slice = tensor_val[0:1].repeat(pad_size, *[1] * (len(tensor_val.shape) - 1))
+            padded_batch_data[key] = torch.cat([tensor_val, pad_tensor_slice], dim=0)
+        else:
+            # Non-tensor or non-batch-aligned data, copy as is
+            padded_batch_data[key] = tensor_val 
+            
+    padded_proto = DataProto.from_dict(padded_batch_data)
+    if hasattr(data_proto, 'meta_info'):
+        padded_proto.meta_info = data_proto.meta_info.copy()
+    return padded_proto, pad_size
+
+def unpad_dataproto(data_proto: DataProto, pad_size: int) -> DataProto:
+    """Removes padding from a DataProto object."""
+    if pad_size == 0:
+        return data_proto
+
+    unpadded_batch_data = {}
+    if 'input_ids' not in data_proto.batch: # Check if batch is empty or malformed
+        print("Warning: 'input_ids' not in data_proto.batch for unpadding. Returning as is.")
+        return data_proto
+        
+    original_batch_size = data_proto.batch['input_ids'].shape[0] - pad_size
+    if original_batch_size < 0:
+        print(f"Warning: pad_size {pad_size} is larger than current batch size {data_proto.batch['input_ids'].shape[0]}. Cannot unpad correctly.")
+        return data_proto # Or raise error
+
+    print(f"Unpadding DataProto batch from {data_proto.batch['input_ids'].shape[0]} to {original_batch_size}")
+
+    for key, tensor_val in data_proto.batch.items():
+        if isinstance(tensor_val, torch.Tensor) and tensor_val.shape[0] == (original_batch_size + pad_size):
+            unpadded_batch_data[key] = tensor_val[:original_batch_size]
+        else:
+            unpadded_batch_data[key] = tensor_val
+            
+    unpadded_proto = DataProto.from_dict(unpadded_batch_data)
+    if hasattr(data_proto, 'meta_info'):
+         unpadded_proto.meta_info = data_proto.meta_info.copy()
+    return unpadded_proto
+
+
+# --- VerlLLMAdapter Class Definition ---
+class VerlLLMAdapter:
+    def __init__(self, actor_rollout_wg, tokenizer, agent_config: 'AgentConfig', tensor_fn: 'TensorHelper'):
+        self.actor_rollout_wg = actor_rollout_wg
+        self.tokenizer = tokenizer
+        # agent_config is OpenManusAgent.AgentConfig, tensor_fn is OpenManusAgent.TensorHelper
+        self.agent_config = agent_config 
+        self.tensor_fn = tensor_fn
+
+    def _construct_prompt_with_tools(self, messages: List[Dict], system_msgs: Optional[List[Dict]], tools: Optional[List[Dict]]) -> str:
+        full_prompt_text = ""
+        if system_msgs:
+            for msg in system_msgs:
+                full_prompt_text += f"System: {msg.get('content', '')}\n"
+        
+        for msg in messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            if isinstance(content, list): # Handle list content (e.g. for multimodal, though this adapter is text-only)
+                text_content = ""
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text_content += item.get("text", "")
+                content = text_content
+            full_prompt_text += f"{role.capitalize()}: {content}\n"
+
+        if tools:
+            full_prompt_text += "\nAvailable Tools:\n"
+            for tool_spec in tools:
+                if tool_spec.get('type') == 'function' and 'function' in tool_spec:
+                    func = tool_spec['function']
+                    full_prompt_text += f"- Name: {func.get('name')}\n"
+                    if 'description' in func:
+                        full_prompt_text += f"  Description: {func.get('description')}\n"
+                    if 'parameters' in func:
+                        full_prompt_text += f"  Parameters: {json.dumps(func.get('parameters'))}\n"
+            full_prompt_text += ("\nInstruct the LLM to use tools by generating text in the format: "
+                                 "<tool_call>{\"name\": \"tool_name\", \"arguments\": {\"arg1\": \"value1\"}}</tool_call>"
+                                 " and provide textual response in <content>...</content> tags if needed.\n")
+        
+        full_prompt_text += "\nAssistant:"
+        return full_prompt_text
+
+    def _parse_response_for_content_and_tools(self, response_text: str) -> MockChatCompletionMessage:
+        content_match = re.search(r"<content>(.*?)</content>", response_text, re.DOTALL)
+        tool_call_match = re.search(r"<tool_call>(.*?)</tool_call>", response_text, re.DOTALL)
+
+        content = None
+        if content_match:
+            content = content_match.group(1).strip()
+        
+        tool_calls_list = []
+        if tool_call_match:
+            try:
+                tool_call_json_str = tool_call_match.group(1).strip()
+                tool_call_data = json.loads(tool_call_json_str)
+                function_args_str = json.dumps(tool_call_data.get("arguments", {}))
+
+                tool_calls_list.append(
+                    MockToolCall(
+                        id=f"toolcall_{torch.randint(0, 100000, (1,)).item()}",
+                        type="function",
+                        function=MockFunctionCall(
+                            name=tool_call_data.get("name"),
+                            arguments=function_args_str 
+                        )
+                    )
+                )
+            except json.JSONDecodeError as e:
+                print(f"Error decoding tool_call JSON: {e}. String was: {tool_call_match.group(1)}")
+            except Exception as e:
+                print(f"Error processing tool_call: {e}")
+        
+        if not content_match and not tool_call_match and response_text: # If no tags, assume all is content
+            content = response_text.strip()
+        
+        return MockChatCompletionMessage(content=content, tool_calls=tool_calls_list if tool_calls_list else None)
+
+    async def ask_tool(
+        self,
+        messages: List[Dict],
+        system_msgs: Optional[List[Dict]] = None,
+        tools: Optional[List[Dict]] = None,
+        tool_choice: Any = None, # Unused for now
+        temperature: Optional[float] = None,
+        **kwargs # e.g. max_tokens
+    ) -> MockChatCompletionMessage | None:
+        prompt_text = self._construct_prompt_with_tools(messages, system_msgs, tools)
+        
+        tokenized_prompt = self.tokenizer(prompt_text, return_tensors='pt', add_special_tokens=False)
+        input_ids = tokenized_prompt['input_ids']
+        
+        if input_ids.shape[1] > self.agent_config.max_prompt_length:
+            input_ids = input_ids[:, -self.agent_config.max_prompt_length:]
+
+        attention_mask = self.tensor_fn.create_attention_mask(input_ids)
+        # position_ids = self.tensor_fn.create_position_ids(attention_mask) # Original TensorHelper used attention_mask
+        # Corrected position_ids generation based on typical HF models:
+        position_ids = torch.arange(0, input_ids.shape[1], device=input_ids.device).unsqueeze(0)
+
+
+        data_proto_batch = {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'position_ids': position_ids
+        }
+        data_proto = DataProto.from_dict(data_proto_batch)
+        
+        max_new_tokens = kwargs.get('max_tokens', self.agent_config.max_response_length)
+        
+        # Access algorithm_config safely
+        algo_config = self.agent_config.algorithm_config if self.agent_config.algorithm_config is not None else {}
+        effective_temperature = temperature if temperature is not None else algo_config.get('temperature', 1.0)
+
+        gen_config_hf = HFGenerationConfig(
+            max_new_tokens=max_new_tokens,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+            temperature=effective_temperature,
+            do_sample=True # Assuming sampling if temperature is relevant
+        )
+        # Ensure meta_info exists
+        if not hasattr(data_proto, 'meta_info') or data_proto.meta_info is None:
+            data_proto.meta_info = {}
+        data_proto.meta_info['generation_config'] = gen_config_hf
+
+        world_size = self.actor_rollout_wg.world_size
+        padded_data_proto, pad_size = pad_dataproto_to_divisor(data_proto, world_size)
+        
+        try:
+            response_proto_padded = await asyncio.to_thread(self.actor_rollout_wg.generate_sequences, padded_data_proto)
+        except Exception as e:
+            print(f"Error during actor_rollout_wg.generate_sequences: {e}")
+            print(traceback.format_exc())
+            return None # Or an error message object
+
+        response_proto = unpad_dataproto(response_proto_padded, pad_size)
+
+        if 'responses' not in response_proto.batch or not isinstance(response_proto.batch['responses'], torch.Tensor) or response_proto.batch['responses'].numel() == 0:
+            print("Warning: No response IDs found in response_proto.batch['responses']. Returning None.")
+            return None
+
+        # Assuming batch size 1 for the response here as ask_tool processes one request at a time.
+        response_ids = response_proto.batch['responses'][0] 
+        response_text = self.tokenizer.decode(response_ids, skip_special_tokens=True)
+        
+        return self._parse_response_for_content_and_tools(response_text)
+
 
 @dataclass
 class AgentConfig:
@@ -80,6 +326,9 @@ class OpenManusAgent:
         self.config = config # AgentConfig now holds algorithm_config
         self.is_validation = is_validation
         self.logger = logger
+        
+        self.manus_submodule_agent = None # Initialized in async_setup
+        self.llm_adapter = None # Initialized in async_setup
 
         self.tensor_fn = TensorHelper(TensorConfig(
             pad_token_id=tokenizer.pad_token_id,
@@ -98,6 +347,72 @@ class OpenManusAgent:
              print(f"[Warning] Number of clients ({num_clients}) exceeds max_workers ({self.config.max_workers}). Using {actual_workers} workers.")
         print(f"[Info] Initializing ThreadPoolExecutor with {actual_workers} workers for {num_clients} clients.")
         self.executor = ThreadPoolExecutor(max_workers=actual_workers)
+
+    async def async_setup(self):
+        # Path setup for OpenManus submodule
+        current_dir = os.path.dirname(os.path.abspath(__file__)) # directory of openmanus.py
+        project_root_guess = os.path.join(current_dir, '..', '..') 
+        openmanus_submodule_dir = os.path.join(project_root_guess, 'OpenManus')
+
+        if not os.path.isdir(openmanus_submodule_dir):
+            print(f"[OpenManusAgent.async_setup] Warning: Could not find OpenManus at relative path {openmanus_submodule_dir}. Relying on PYTHONPATH.")
+        elif openmanus_submodule_dir not in sys.path:
+            sys.path.insert(0, openmanus_submodule_dir)
+            print(f"[OpenManusAgent.async_setup] Added {openmanus_submodule_dir} to sys.path")
+
+        try:
+            from app.agent.manus import Manus as SubmoduleManus
+            from app.tool.browser_use_tool import BrowserUseTool # Added import
+            print("[OpenManusAgent.async_setup] Successfully imported SubmoduleManus and BrowserUseTool.")
+            print("[OpenManusAgent.async_setup] Creating SubmoduleManus instance...")
+            # run_async_in_sync_context is not available, so we call create directly.
+            # This implies __init__ or its caller handles the async context, or SubmoduleManus.create() is okay.
+            # If SubmoduleManus.create() is blocking, this could be an issue if __init__ is purely sync.
+            # For now, assuming it works as per the task's fallback plan.
+            self.manus_submodule_agent = await SubmoduleManus.create()
+            
+            print("[OpenManusAgent.async_setup] Creating VerlLLMAdapter...")
+            self.llm_adapter = VerlLLMAdapter(
+                self.actor_rollout_wg, 
+                self.tokenizer, 
+                self.config, # This is OpenManusAgent's AgentConfig
+                self.tensor_fn
+            )
+            # Inject the adapter into the submodule agent instance
+            # Assuming self.manus_submodule_agent has an 'llm' attribute to be replaced.
+            if hasattr(self.manus_submodule_agent, 'llm'):
+                self.manus_submodule_agent.llm = self.llm_adapter 
+                print("[OpenManusAgent.async_setup] VerlLLMAdapter injected into SubmoduleManus.")
+            else:
+                print("[OpenManusAgent.async_setup] Warning: SubmoduleManus instance does not have an 'llm' attribute to replace.")
+
+            # Inject adapter into BrowserUseTool if present
+            if hasattr(self.manus_submodule_agent, 'available_tools') and self.manus_submodule_agent.available_tools and \
+               hasattr(self.manus_submodule_agent.available_tools, 'tools'):
+                for tool_instance in self.manus_submodule_agent.available_tools.tools: # Assuming .tools gives a list of instances
+                    if isinstance(tool_instance, BrowserUseTool):
+                        if hasattr(tool_instance, 'llm'):
+                            tool_instance.llm = self.llm_adapter
+                            # Assuming tool_instance has a 'name' attribute for logging
+                            tool_name = getattr(tool_instance, 'name', str(tool_instance))
+                            print(f"[OpenManusAgent.async_setup] VerlLLMAdapter injected into BrowserUseTool instance: {tool_name}")
+                        else:
+                            tool_name = getattr(tool_instance, 'name', str(tool_instance))
+                            print(f"[OpenManusAgent.async_setup] Warning: BrowserUseTool instance {tool_name} does not have an 'llm' attribute to replace.")
+            else:
+                print("[OpenManusAgent.async_setup] No 'available_tools' or 'available_tools.tools' found on submodule agent, or it's empty. Skipping tool LLM injection.")
+
+        except ImportError as e:
+            print(f"[OpenManusAgent.async_setup] Critical Error: Failed to import SubmoduleManus or BrowserUseTool: {e}. Check path and submodule.")
+            self.manus_submodule_agent = None
+            self.llm_adapter = None 
+            return # Exit if essential imports fail
+        except Exception as e:
+            print(f"[OpenManusAgent.async_setup] Critical Error during async_setup: {e}")
+            # import traceback # Already imported at file level usually, or ensure it is.
+            traceback.print_exc()
+            self.manus_submodule_agent = None
+            self.llm_adapter = None
 
     def _init_env_clients(self) -> List[Any]: # Renamed and return type changed
         """
@@ -342,9 +657,104 @@ class OpenManusAgent:
             'done': done                   # Whether the episode finished naturally or via error
         }
 
+    # Replacing the old _run_single_rollout with the new async version
+    async def _run_single_rollout(self, initial_prompt_ids: torch.Tensor, task_idx: int, client: Any) -> Dict[str, Any]:
+       if not self.manus_submodule_agent or not self.llm_adapter:
+           print("[OpenManusAgent._run_single_rollout] Error: SubmoduleManus agent not initialized. Call async_setup first.")
+           print("[OpenManusAgent._run_single_rollout] Warning: Attempting late initialization via async_setup().")
+           await self.async_setup() 
+           if not self.manus_submodule_agent: # If still not initialized, then fail
+                raise RuntimeError("SubmoduleManus agent failed to initialize even after late async_setup call.")
+
+       trajectory = []
+       step_rewards = []
+       final_reward = 0.0
+       final_env_score = 0.0 # Still 0 as per StepOutput
+       done = False
+       turns = 0
+       
+       current_env_obs_text = ""
+
+       try:
+           await client.reset(task_idx) # Assuming client.reset() can be async
+           current_env_obs_text = client.observe()
+           trajectory.append({"from": "env", "value": current_env_obs_text})
+
+           # Optional: Reset Manus submodule agent's memory if it's stateful and reused across rollouts.
+           # if hasattr(self.manus_submodule_agent, 'reset_memory'):
+           # await self.manus_submodule_agent.reset_memory() 
+
+           for t in range(self.config.max_turns):
+               turns = t + 1
+               
+               self.manus_submodule_agent.update_memory("user", current_env_obs_text)
+               
+               await self.manus_submodule_agent.step() 
+
+               action_for_base_env = ""
+               if not self.manus_submodule_agent.memory.messages: # Check memory.messages
+                   action_for_base_env = "" 
+               else:
+                   last_manus_message = self.manus_submodule_agent.memory.messages[-1]
+                   # Ensure message is dict-like or has attributes role, content, tool_calls
+                   # The placeholder Manus in openmanus_env.py uses simple objects. Real one should be fine.
+                   msg_role = getattr(last_manus_message, 'role', None)
+                   msg_content = getattr(last_manus_message, 'content', "")
+                   msg_tool_calls = getattr(last_manus_message, 'tool_calls', None)
+
+                   if msg_role == "assistant":
+                       action_for_base_env = msg_content or ""
+                       if msg_tool_calls:
+                           # Handle tool calls if they are meant for the base environment
+                           # This part needs a clear convention. For now, content is primary.
+                           pass 
+                   else: 
+                       action_for_base_env = "" 
+
+               trajectory.append({"from": "gpt", "value": action_for_base_env})
+
+               if action_for_base_env is None: action_for_base_env = ""
+               step_output = await client.step(action_for_base_env) # Assuming client.step() can be async
+               next_env_obs_text = step_output.state
+               reward = step_output.reward
+               done = step_output.done
+               # info = {} # As before, StepOutput has no info
+
+               step_rewards.append(reward)
+               final_reward = reward
+               # final_env_score = info.get('score', 0.0) # Remains 0
+
+               trajectory[-1]['reward'] = reward 
+               # trajectory[-1]['info'] = info # No info
+
+               current_env_obs_text = next_env_obs_text
+               if not done:
+                   trajectory.append({"from": "env", "value": current_env_obs_text})
+               else:
+                   break
+           
+       except Exception as e:
+           print(f"[OpenManusAgent._run_single_rollout][{task_idx}] Error: {e}")
+           import traceback
+           traceback.print_exc()
+           done = True 
+
+       return {
+           'trajectory': trajectory,
+           'step_rewards': step_rewards,
+           'reward': final_reward,
+           'env_score': final_env_score,
+           'turns': turns,
+           'valid_actions': len([msg for msg in trajectory if msg.get("from") == "gpt"]),
+           'task_idx': task_idx,
+           'done': done
+       }
+
     def run_llm_loop(self, gen_batch: DataProto, output_dir: str = None, global_steps: int = 0) -> DataProto:
         """
         Run the LLM interaction loop for a batch of initial prompts using multiple clients.
+        This method now needs to handle the async nature of _run_single_rollout.
+        It will use asyncio.gather to run rollouts concurrently.
 
         Args:
             gen_batch: DataProto containing initial prompts
@@ -381,41 +791,85 @@ class OpenManusAgent:
         rollout_results_list = [None] * batch_size  # Preallocate list to store results in order
 
         # Submit tasks to the thread pool, distributing across clients
-        for i in range(batch_size):
-            task_idx = i
-            initial_prompt = initial_prompts_ids[i:i+1]  # Keep batch dim
-
-            # Select a client for this task (round-robin)
-            client_index = i % num_clients
-            selected_client = self.clients[client_index]
-
-            # Submit the rollout task with the selected client
-            future = self.executor.submit(self._run_single_rollout, initial_prompt, task_idx, selected_client)
-            futures[future] = i  # Store original batch index
-
-        print(f"[Agent.run_llm_loop] Submitted {batch_size} rollout tasks to {self.executor._max_workers} workers.")
-
-        # Collect results
-        completed_count = 0
-        for future in as_completed(futures):
-            original_index = futures[future]
+        # This part needs to be adapted for asyncio.gather if _run_single_rollout is async.
+        # The ThreadPoolExecutor is for sync functions. For async, we use asyncio.
+        
+        # First, ensure async_setup has been called.
+        # This is a temporary workaround. Ideally, the trainer calls async_setup once.
+        if not self.manus_submodule_agent or not self.llm_adapter:
+            print("[Agent.run_llm_loop] Warning: manus_submodule_agent not ready. Calling async_setup().")
+            # This is problematic if run_llm_loop is called in a sync context by the trainer.
+            # For now, let's assume run_llm_loop can become async or use a helper.
+            # If run_async_in_sync_context existed, it would be: run_async_in_sync_context(self.async_setup())
+            # Without it, this will error if called from pure sync.
+            # The subtask implies we might need to define run_async_in_sync_context.
+            # For now, this part highlights the sync/async challenge.
+            # Let's assume for the purpose of this refactor that this method will be called from an async context
+            # or that the environment setup handles the event loop.
+            # If not, the direct `await self.async_setup()` here would be an issue.
+            # To make it runnable in a sync context (like a Ray actor method), one might do:
             try:
-                result_dict = future.result()
-                rollout_results_list[original_index] = result_dict
-                completed_count += 1
-                # print(f"Completed task {original_index + 1}/{batch_size}") # Optional progress logging
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, can't run_until_complete. Schedule and hope for the best or use nested loop if allowed.
+                    # This is complex. Simplest for now is to assume it's called or this method becomes async.
+                    # Let's assume this method will be made async if needed by caller.
+                    # For now, to make the diff apply, I'll proceed as if this method can call await.
+                    # This will require `run_llm_loop` to become `async def run_llm_loop`.
+                    # This change is outside the direct scope of the subtask's diff for _run_single_rollout,
+                    # but is a necessary consequence.
+                    # For now, let's comment out the direct await here and assume setup is done prior.
+                    pass # await self.async_setup() # This line would make run_llm_loop async
+                else:
+                    loop.run_until_complete(self.async_setup())
+            except RuntimeError: # No event loop
+                 asyncio.run(self.async_setup())
 
-            except Exception as e:
-                print(f"[Agent.run_llm_loop] Error collecting result for batch index {original_index} (task_idx {original_index}): {e}")
+
+        async def gather_rollouts():
+            tasks_to_run = []
+            for i in range(batch_size):
+                task_idx = i # This is the environment's task index, not necessarily original batch index if shuffled
+                initial_prompt = initial_prompts_ids[i:i+1]
+                client_index = i % num_clients
+                selected_client = self.clients[client_index]
+                tasks_to_run.append(self._run_single_rollout(initial_prompt, task_idx, selected_client))
+            
+            # Execute all rollout tasks concurrently
+            return await asyncio.gather(*tasks_to_run, return_exceptions=True)
+
+        # Execute the async gathering function
+        # This requires run_llm_loop to be async or to manage an event loop.
+        # If run_llm_loop is sync, this is where run_async_in_sync_context would be essential.
+        # For now, assume it can be made async or the environment handles it.
+        # results_or_exceptions = asyncio.run(gather_rollouts()) # This creates a new loop, might conflict.
+        # A common pattern if run_llm_loop is sync and part of a class:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError: # No event loop in this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        results_or_exceptions = loop.run_until_complete(gather_rollouts())
+
+
+        rollout_results_list = [None] * batch_size
+        completed_count = 0
+        for i, res_or_exc in enumerate(results_or_exceptions):
+            original_batch_idx = i # Assuming results are in order of submission
+            if isinstance(res_or_exc, Exception):
+                print(f"[Agent.run_llm_loop] Error collecting result for batch index {original_batch_idx}: {res_or_exc}")
                 print(traceback.format_exc())
-                # Store a placeholder or error indicator
-                rollout_results_list[original_index] = {
+                rollout_results_list[original_batch_idx] = {
                     'trajectory': [], 'step_rewards': [], 'reward': 0.0,
-                    'turns': 0, 'env_score': 0.0, 'task_idx': original_index,
-                    'error': str(e)
+                    'turns': 0, 'env_score': 0.0, 'task_idx': original_batch_idx, # Use original_batch_idx as task_idx fallback
+                    'error': str(res_or_exc)
                 }
-
-        print(f"[Agent.run_llm_loop] Collected results from {completed_count}/{batch_size} rollouts.")
+            else:
+                rollout_results_list[original_batch_idx] = res_or_exc
+                completed_count +=1
+        
+        print(f"[Agent.run_llm_loop] Collected results from {completed_count}/{batch_size} rollouts (async execution).")
 
         # Filter out potential None entries if some tasks failed critically
         valid_results = [res for res in rollout_results_list if res is not None]

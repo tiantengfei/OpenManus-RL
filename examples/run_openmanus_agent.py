@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 import sys
 import os
 import importlib # For patching
+import asyncio # Added for async main
 
 # Adjust path to import OpenManusAgent and other necessary components
 # This assumes 'examples/' is at the root of the project, alongside 'openmanus_rl/'
@@ -119,14 +120,14 @@ class MockActorRolloutWG:
         self.world_size = 1
         # Mock attributes that might be accessed from actor_rollout_wg.rollout config
         self.rollout = DictConfig({ # Using DictConfig for compatibility
-            'log_prob_micro_batch_size': 1,
-            # Add other attributes if agent accesses them, e.g.
-            # 'temperature': 1.0,
+            'log_prob_micro_batch_size': 1, # Matches AgentConfig default expectation
+            'temperature': 0.7, # Matches AgentConfig default expectation
             # 'log_prob_use_dynamic_bsz': False,
         })
 
 
     def generate_sequences(self, data_proto: DataProto) -> DataProto:
+        print("[MockActorRolloutWG] generate_sequences called!") # <--- ADDED THIS PRINT STATEMENT
         input_ids = data_proto.batch['input_ids']
         # Simple mock response: "action: <action>search item</action>"
         mock_response_text = "<action>search item</action>" 
@@ -186,7 +187,7 @@ class MockEnvClient: # Used by OpenManusAgent._init_env_clients
         return StepOutput(state=next_state, reward=reward, done=done)
 
 # --- Main Example Script ---
-def main(): # Changed from async def main() as run_llm_loop is blocking
+async def main(): # Changed to async def
     print("--- Starting OpenManusAgent Example Script ---")
 
     # 1. Initialize Mock Components
@@ -237,20 +238,44 @@ def main(): # Changed from async def main() as run_llm_loop is blocking
         react_format=True,
         env_data_len=10, 
         max_workers=2, # Should be <= len(env_ports)
-        algorithm_config=DictConfig({'reward_allocation': 'last_token', 'gamma': 0.99, 'log_prob_micro_batch_size': 1})
+        # Ensure temperature is here if adapter uses it, and other relevant actor_rollout_wg.rollout configs
+        algorithm_config=DictConfig({
+            'reward_allocation': 'last_token', 
+            'gamma': 0.99, 
+            'temperature': 0.7, # Used by VerlLLMAdapter via HFGenerationConfig
+            'log_prob_micro_batch_size': 1 # Matches mock_actor_rollout_wg
+        })
     )
 
-    # 3. Instantiate OpenManusAgent
+    # 4. Instantiate OpenManusAgent
     print("\n--- Initializing OpenManusAgent ---")
     openmanus_agent = OpenManusAgent(
         tokenizer=mock_tokenizer,
         actor_rollout_wg=mock_actor_rollout_wg,
         config=agent_config,
     )
+    
+    # 5. Call async_setup (NEW)
+    print("\n--- Calling OpenManusAgent.async_setup() ---")
+    await openmanus_agent.async_setup() # <--- ADDED THIS CALL
+    # Check if setup was successful
+    if not openmanus_agent.manus_submodule_agent:
+        print("Critical Error: Manus submodule agent not initialized after async_setup. Exiting.")
+        importlib.import_module = original_import_module # Restore importlib
+        return
     print(f"OpenManusAgent initialized with {len(openmanus_agent.clients)} mock environment clients.")
+    # Check types of submodule agent and its LLM
+    if openmanus_agent.manus_submodule_agent:
+        print(f"Submodule Manus agent type: {type(openmanus_agent.manus_submodule_agent)}")
+        if hasattr(openmanus_agent.manus_submodule_agent, 'llm'):
+             print(f"Submodule Manus agent's LLM adapter type: {type(openmanus_agent.manus_submodule_agent.llm)}")
+        else:
+            print("Submodule Manus agent has no 'llm' attribute.")
+    else:
+        print("Submodule Manus agent is None.")
 
 
-    # 4. Prepare Sample DataProto Batch
+    # 6. Prepare Sample DataProto Batch
     print("\n--- Preparing Sample DataProto Batch ---")
     initial_prompts_text = [
         "Find a durable coffee mug under $15.",
@@ -268,12 +293,11 @@ def main(): # Changed from async def main() as run_llm_loop is blocking
     sample_data_proto.meta_info = sample_meta_info # type: ignore
     print(f"Sample DataProto created with batch_size: {sample_data_proto.batch['input_ids'].shape[0]}")
 
-    # 5. Call run_llm_loop
+    # 7. Call run_llm_loop
     print("\n--- Calling OpenManusAgent.run_llm_loop ---")
-    # OpenManusAgent.run_llm_loop uses ThreadPoolExecutor and is blocking.
-    results_data_proto = openmanus_agent.run_llm_loop(sample_data_proto)
+    results_data_proto = openmanus_agent.run_llm_loop(sample_data_proto) # This is a sync call
 
-    # 6. Print Results
+    # 8. Print Results
     print("\n--- Results from OpenManusAgent ---")
     if results_data_proto:
         print(f"Output DataProto batch contains keys: {list(results_data_proto.batch.keys())}")
@@ -312,5 +336,4 @@ def main(): # Changed from async def main() as run_llm_loop is blocking
     print("\n--- OpenManusAgent Example Script Finished ---")
 
 if __name__ == "__main__":
-    # main() is synchronous, no asyncio needed here directly
-    main()
+    asyncio.run(main()) # Changed to asyncio.run(main())
