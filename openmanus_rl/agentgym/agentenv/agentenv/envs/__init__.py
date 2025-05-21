@@ -11,4 +11,3 @@ from .todo import TodoEnvClient, TodoTask
 from .weather import WeatherEnvClient, WeatherTask
 from .webarena import WebarenaEnvClient, WebarenaTask
 from .webshop import WebshopEnvClient, WebshopTask
-from .openmanus_env import OpenManusEnvClient
