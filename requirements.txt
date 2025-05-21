@@ -15,3 +15,6 @@ wandb
 IPython
 matplotlib
 omegaconf
+
+# For OpenManus environment integration
+git+https://github.com/FoundationAgents/OpenManus.git#egg=openmanus
