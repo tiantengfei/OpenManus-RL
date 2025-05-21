@@ -3,7 +3,7 @@ from .alfworld import AlfWorldEnvClient, AlfWorldTask
 from .babyai import BabyAIEnvClient, BabyAITask
 from .lmrlgym import MazeEnvClient, MazeTask, WordleEnvClient, WordleTask
 from .movie import MovieEnvClient, MovieTask
-from .openmanus_env import OpenManusTask # Added
+from .openmanus_env import OpenManusLocalTask # Updated
 from .sciworld import SciworldEnvClient, SciworldTask
 from .sheet import SheetEnvClient, SheetTask
 from .sqlgym import SqlGymEnvClient, SqlGymTask
@@ -20,7 +20,7 @@ __all__ = [
     "MazeTask",
     "WordleTask",
     "MovieTask",
-    "OpenManusTask", # Added
+    "OpenManusLocalTask", # Updated
     "SciworldTask",
     "SheetTask",
     "SqlGymTask",

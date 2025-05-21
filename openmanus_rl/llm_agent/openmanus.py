@@ -114,7 +114,7 @@ class OpenManusAgent:
             "sciworld": "SciworldTask", "sheet": "SheetTask", "sqlgym": "SqlGymTask",
             "textcraft": "TextCraftTask", "todo": "TodoTask", "weather": "WeatherTask",
             "webarena": "WebarenaTask", "webshop": "WebshopTask",
-            "openmanus": "OpenManusTask", # Added
+            "openmanus_local": "OpenManusLocalTask", # Updated
         }
 
         if env_name_lower not in ENV_TO_TASK_CLASS:

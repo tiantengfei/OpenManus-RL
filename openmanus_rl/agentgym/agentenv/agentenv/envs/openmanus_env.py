@@ -1,97 +1,59 @@
-from typing import Any, Mapping, Optional, Dict
+from typing import Any, Mapping, Optional, Dict, Literal
+import json
+import re # For parsing tool calls
+import asyncio
 
 from agentenv.controller import BaseEnvClient, BaseTask, StepOutput, ConversationMessage
 
-# --- BEGIN HYPOTHETICAL REAL OpenManus Library Integration ---
-# IMPORTANT: The following imports and class names are HYPOTHETICAL.
-# They need to be verified against the actual FoundationAgents/OpenManus library structure.
-# Assumed structure:
-# import openmanus.core.executor as openmanus_executor
-# from openmanus.core.responses import StepResult as OpenManusStepResult
+# Import tools (assuming they are in ../tools/)
+from ..tools.base import BaseTool
+from ..tools.python_execute import PythonExecute
+from ..tools.terminate import Terminate
+from ..tools.ask_human import AskHuman
+from ..tools.str_replace_editor import StrReplaceEditor, ToolError as EditorToolError
+from ..tools.browser_use_tool_wrapper import BrowserUseToolWrapper, ToolError as BrowserToolError
 
-# For now, to make the code runnable if openmanus is not yet installed or structured this way,
-# we'll try-except the import and fall back to a mock if it fails.
+# Define a common ToolError if not already centralized, or use specific ones
+# For now, specific tool errors can be caught, or a general one if defined in base.py
+class ToolError(Exception): # General error for the executor
+    pass
 
-try:
-    # Attempt to import the hypothetical real OpenManus components
-    from openmanus.core.executor import OpenManusSessionExecutor
-    # Assuming StepResult might be part of the executor module or a responses module
-    from openmanus.core.executor import StepResult as OpenManusStepResult
-    OPENMANUS_LIB_AVAILABLE = True
-    print("[OpenManusSessionProxy] Successfully imported 'openmanus' library components.")
-except ImportError:
-    OPENMANUS_LIB_AVAILABLE = False
-    print("[OpenManusSessionProxy] WARNING: 'openmanus' library not found or structured as expected. Falling back to MOCK implementation.")
-
-    # --- Fallback Mock OpenManus Library Interface (if real one fails to import) ---
-    class OpenManusStepResult: # Renamed MockOpenManusStepResult
-        def __init__(self, observation: str, is_terminated: bool, status_info: Dict[str, Any]):
-            self.observation = observation
-            self.is_terminated = is_terminated
-            self.status_info = status_info
-
-    class OpenManusSessionExecutor: # Renamed MockOpenManusSessionExecutor
-        def __init__(self, task_description: str, config: Optional[Dict[str, Any]] = None):
-            self.task_description = task_description
-            self.config = config or {}
-            self.max_steps = self.config.get("max_steps", 10)
-            self.current_step = 0
-            self._current_observation = f"Task initialized (MOCK): '{self.task_description}'. Waiting for action."
-            self._is_terminated = False
-            print(f"[OpenManusSessionExecutor-MOCK] Session for '{task_description}' initialized. Max steps: {self.max_steps}.")
-
-        def get_initial_observation(self) -> str:
-            return self._current_observation
-
-        def execute_step(self, action: str) -> OpenManusStepResult:
-            self.current_step += 1
-            status_info = {"success": False, "message": ""}
-
-            if self._is_terminated:
-                self._current_observation = "Session already terminated (MOCK)."
-                status_info["message"] = "Action attempted on terminated session (MOCK)."
-                return OpenManusStepResult(self._current_observation, self._is_terminated, status_info)
-
-            if "success" in action.lower():
-                self._current_observation = f"Action '{action}' led to task success (MOCK)."
-                self._is_terminated = True
-                status_info["success"] = True
-                status_info["message"] = "Task completed successfully (MOCK)."
-            elif "fail" in action.lower():
-                self._current_observation = f"Action '{action}' led to task failure (MOCK)."
-                self._is_terminated = True
-                status_info["success"] = False
-                status_info["message"] = "Task failed based on action (MOCK)."
-            elif self.current_step >= self.max_steps:
-                self._current_observation = f"Reached max steps ({self.max_steps}). Task terminating (MOCK)."
-                self._is_terminated = True
-                status_info["success"] = False
-                status_info["message"] = f"Terminated due to max steps ({self.max_steps}) (MOCK)."
-            else:
-                self._current_observation = f"After action '{action}' (step {self.current_step}) (MOCK): Still ongoing."
-                status_info["message"] = "Step processed, task ongoing (MOCK)."
-            
-            print(f"[OpenManusSessionExecutor-MOCK] execute_step: Obs='{self._current_observation[:50]}...', Done={self._is_terminated}")
-            return OpenManusStepResult(self._current_observation, self._is_terminated, status_info)
-    # --- End Fallback Mock OpenManus Library Interface ---
-
-# --- END HYPOTHETICAL REAL OpenManus Library Integration ---
-
-
-class OpenManusSessionProxy:
+class LocalToolExecutor:
     def __init__(self, task_description: str, config: Optional[Dict[str, Any]] = None):
-        print(f"[OpenManusSessionProxy] Initializing with task: '{task_description}' and config: {config}")
         self.task_description = task_description
         self.config = config if config else {}
+        self.max_steps = self.config.get("max_steps", 20) # Max steps for the episode
         
-        # Instantiate the actual (or mock if unavailable) OpenManus session executor
-        self.executor = OpenManusSessionExecutor(task_description, self.config)
-        
-        self.current_observation_text: str = self.executor.get_initial_observation()
-        self.task_completed: bool = False 
-        self.latest_status_info: Dict[str, Any] = {"message": "Session just initialized"}
+        # Initialize tools
+        # Config for tools can be passed from self.config if needed
+        browser_tool_config = self.config.get("browser_tool_config", {})
+        str_editor_workspace_root = self.config.get("str_editor_workspace_root", None) # Example
 
-        print(f"[OpenManusSessionProxy] Initialized. Initial obs: {self.current_observation_text[:100]}...")
+        self.python_tool = PythonExecute()
+        self.terminate_tool = Terminate()
+        self.ask_human_tool = AskHuman()
+        self.str_replace_editor_tool = StrReplaceEditor(workspace_root=str_editor_workspace_root)
+        self.browser_tool = BrowserUseToolWrapper(browser_config_args=browser_tool_config)
+
+        self.tools: Dict[str, BaseTool] = {
+            self.python_tool.name: self.python_tool,
+            self.terminate_tool.name: self.terminate_tool,
+            self.ask_human_tool.name: self.ask_human_tool,
+            self.str_replace_editor_tool.name: self.str_replace_editor_tool,
+            self.browser_tool.name: self.browser_tool,
+        }
+        
+        self.current_step: int = 0
+        self.current_observation_text: str = (
+            f"Task initialized: '{self.task_description}'. "
+            f"Available tools: {', '.join(self.tools.keys())}. "
+            f"Use tools in format: ToolName[json_arguments_string] or ToolName[]."
+        )
+        self.task_completed: bool = False
+        self.latest_status_info: Dict[str, Any] = {"message": "Session initialized."}
+
+        print(f"[LocalToolExecutor] Initialized for task: '{self.task_description}'. Max steps: {self.max_steps}.")
+        print(f"[LocalToolExecutor] Available tools: {list(self.tools.keys())}")
 
     def get_initial_observation(self) -> str:
         return self.current_observation_text
@@ -99,136 +61,228 @@ class OpenManusSessionProxy:
     def get_current_observation(self) -> str:
         return self.current_observation_text
 
-    def process_action(self, action: str) -> None:
-        print(f"[OpenManusSessionProxy] Processing action: '{action}'")
+    async def process_action(self, action_str: str) -> None:
+        self.current_step += 1
+        # Regex to match ToolName[args_json_string] or ToolName[]
+        tool_call_match = re.match(r"^\s*(\w+)\s*\[\s*(.*)\s*\]\s*$", action_str)
+
+        tool_executed_successfully = False
+        # tool_output = "" # Not strictly needed here as current_observation_text is set directly
         
-        if self.task_completed:
-            print("[OpenManusSessionProxy] Warning: Action processed on already completed task.")
-            self.current_observation_text = "Tried to act on a completed task."
+        if self.task_completed: # Prevent action if already completed
+            self.current_observation_text = "Tried to act on a completed task. No state change."
+            print("[LocalToolExecutor] Warning: Action processed on already completed task.")
             return
 
-        # Interact with the OpenManus library (real or mock)
-        step_result: OpenManusStepResult = self.executor.execute_step(action)
+        if tool_call_match:
+            tool_name = tool_call_match.group(1)
+            args_str = tool_call_match.group(2).strip() # Arguments string, could be empty
+            
+            if tool_name in self.tools:
+                tool = self.tools[tool_name]
+                try:
+                    args = {}
+                    if args_str: # If args_str is not empty, try to parse as JSON
+                        args = json.loads(args_str)
+                        if not isinstance(args, dict):
+                             raise ToolError("Arguments must be a JSON object (dict). Found: " + str(type(args)))
+                    
+                    # Execute the tool
+                    self.current_observation_text = await tool.execute(**args) # Tool output becomes new observation
+                    tool_executed_successfully = True 
+
+                    if tool_name == self.terminate_tool.name:
+                        self.task_completed = True
+                        status = args.get("status", "success") # Default to success if not specified
+                        self.latest_status_info = {
+                            "success": status == "success",
+                            "message": f"Terminated by agent with status: {status}"
+                        }
+                except json.JSONDecodeError:
+                    self.current_observation_text = f"Error: Invalid JSON arguments for tool {tool_name}: '{args_str}'"
+                    self.latest_status_info = {"success": False, "message": "Tool argument JSON parsing error."}
+                except (ToolError, BrowserToolError, EditorToolError) as e: # Catch specific tool errors
+                    self.current_observation_text = f"Error executing tool {tool_name}: {e}"
+                    self.latest_status_info = {"success": False, "message": f"Tool error: {e}"}
+                except TypeError as e: # Catch argument mismatch errors (e.g. missing required arg)
+                     self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args_str}"
+                     self.latest_status_info = {"success": False, "message": f"Tool argument mismatch: {e}"}
+                except Exception as e:
+                    self.current_observation_text = f"Unexpected error executing tool {tool_name}: {str(e)}"
+                    self.latest_status_info = {"success": False, "message": f"Unexpected tool error: {e}"}
+            else:
+                self.current_observation_text = f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.keys())}"
+                self.latest_status_info = {"success": False, "message": "Unknown tool."}
+        else: 
+            self.current_observation_text = (
+                f"Received message: '{action_str}'. This is not a valid tool call. "
+                f"Please use ToolName[json_arguments_string] or ToolName[] format. "
+                f"Available tools: {', '.join(self.tools.keys())}"
+            )
+            self.latest_status_info = {"success": False, "message": "Non-tool action / command format not understood."}
+
+        if not self.task_completed and self.current_step >= self.max_steps:
+            self.task_completed = True
+            # Append to observation rather than replacing, so tool output isn't lost
+            self.current_observation_text += "\nMax steps reached. Episode terminated."
+            self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
         
-        self.current_observation_text = step_result.observation
-        self.task_completed = step_result.is_terminated
-        self.latest_status_info = step_result.status_info
+        if tool_executed_successfully and not self.task_completed:
+            self.latest_status_info = {"success": True, "message": "Tool executed."}
         
-        print(f"[OpenManusSessionProxy] New observation: {self.current_observation_text[:100]}...")
-        if self.task_completed:
-            print(f"[OpenManusSessionProxy] Task is now completed. Status: {self.latest_status_info.get('message')}")
+        print(f"[LocalToolExecutor] Step {self.current_step}: Action='{action_str}', Done={self.task_completed}")
+        print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
+
 
     def is_done(self) -> bool:
         return self.task_completed
 
     def get_reward(self) -> float:
         if not self.task_completed:
-            return self.config.get("reward_step", 0.0)
+            return self.config.get("reward_step", 0.0) 
 
         if self.latest_status_info.get("success", False):
             return self.config.get("reward_success", 1.0)
         
-        # Check for specific termination messages for differentiated rewards
         message = self.latest_status_info.get("message", "").lower()
-        if "max steps" in message:
-             return self.config.get("reward_timeout", -0.1)
-        # Add other failure conditions if OpenManus provides more detailed status_info
-        # For now, any other terminated state that isn't success is a general failure.
-        return self.config.get("reward_failure", -1.0)
+        if "max steps" in message: # Timeout due to max_steps
+             return self.config.get("reward_timeout", -1.0) # Penalize timeout
+        return self.config.get("reward_failure", -0.5) # General failure, less penalty than timeout
+
+    async def cleanup(self):
+        print("[LocalToolExecutor] Cleaning up resources...")
+        if hasattr(self.browser_tool, 'cleanup') and callable(self.browser_tool.cleanup):
+            await self.browser_tool.cleanup()
+        # Add other tool cleanups if needed, e.g. for StrReplaceEditor if it had temp files/dirs
+        print("[LocalToolExecutor] Cleanup finished.")
 
 
-class OpenManusEnvClient(BaseEnvClient):
-    conversation_start = (
-        ConversationMessage(
-            {"from": "human", "loss": None, "value": "Goal:"}
-        ),
-    )
+class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
+    conversation_start = (ConversationMessage({"from": "human", "loss": None, "value": "Goal:"}),)
 
     def __init__(
         self,
-        env_server_base: str, # Not used by this client but part of BaseTask's expected args
+        env_server_base: str, 
         data_len: int,
         *args,
-        openmanus_config: Optional[Dict[str, Any]] = None,
-        timeout: int = 300,   # Not used by this client
+        env_specific_config: Optional[Dict[str, Any]] = None, 
+        timeout: int = 300,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.data_len = data_len
-        self.session_proxy: Optional[OpenManusSessionProxy] = None
+        self.tool_executor: Optional[LocalToolExecutor] = None # Renamed
         self.current_task_idx: Optional[int] = None
         
-        self.openmanus_session_config = openmanus_config.copy() if openmanus_config else {}
-        self.openmanus_session_config.setdefault("reward_step", 0.0)
-        self.openmanus_session_config.setdefault("reward_success", 1.0)
-        self.openmanus_session_config.setdefault("reward_failure", -1.0)
-        self.openmanus_session_config.setdefault("reward_timeout", -0.1)
-        self.openmanus_session_config.setdefault("max_steps", 10) # Default for mock
+        self.executor_config = env_specific_config.copy() if env_specific_config else {}
+        self.executor_config.setdefault("reward_step", 0.0)
+        self.executor_config.setdefault("reward_success", 1.0)
+        self.executor_config.setdefault("reward_failure", -0.5) 
+        self.executor_config.setdefault("reward_timeout", -1.0) 
+        self.executor_config.setdefault("max_steps", 20) # Default max steps for an episode
 
-        print(f"[OpenManusEnvClient] Initialized. Data len: {data_len}. Session config: {self.openmanus_session_config}")
-        if not OPENMANUS_LIB_AVAILABLE:
-            print("[OpenManusEnvClient] Using MOCK OpenManus library.")
-
+        print(f"[OpenManusLocalEnvClient] Initialized. Executor config: {self.executor_config}")
 
     def __len__(self):
         return self.data_len
 
     def observe(self) -> str:
-        if self.session_proxy:
-            return self.session_proxy.get_current_observation()
-        print("[OpenManusEnvClient] Observe called before reset or session_proxy is None.")
+        if self.tool_executor:
+            return self.tool_executor.get_current_observation()
+        print("[OpenManusLocalEnvClient] Observe called before reset or executor is None.")
         return "Environment not initialized. Please call reset."
 
-    def step(self, action: str) -> StepOutput:
-        if not self.session_proxy:
-            print("[OpenManusEnvClient] Step called before reset or session_proxy is None.")
-            return StepOutput(
-                state="Error: OpenManus session not initialized. Call reset first.",
-                reward=0.0,
-                done=True,
-            )
+    async def step(self, action: str) -> StepOutput: # Made async
+        if not self.tool_executor:
+            print("[OpenManusLocalEnvClient] Step called before reset or executor is None.")
+            return StepOutput(state="Error: Tool executor not initialized.", reward=0.0, done=True)
 
-        self.session_proxy.process_action(action)
+        await self.tool_executor.process_action(action) # process_action is now async
         
-        state = self.session_proxy.get_current_observation()
-        reward = self.session_proxy.get_reward()
-        done = self.session_proxy.is_done()
+        state = self.tool_executor.get_current_observation()
+        reward = self.tool_executor.get_reward()
+        done = self.tool_executor.is_done()
 
         return StepOutput(state=state, reward=reward, done=done)
 
-    def reset(self, idx: int, task_description: Optional[str] = None) -> str:
+    def reset(self, idx: int, task_description: Optional[str] = None) -> str: 
         self.current_task_idx = idx
-        
-        actual_task_description: str
-        if task_description: # This might not be passed by OpenManusAgent; idx is primary
-            actual_task_description = task_description
-        else:
-            # The 'idx' could be used to fetch a specific task from a dataset
-            # or directly by the OpenManus library if it manages its own task set.
-            actual_task_description = f"Task ID: {idx}" 
+        actual_task_desc = task_description if task_description else f"Default Task ID: {idx}"
 
-        print(f"[OpenManusEnvClient] Resetting to task_idx: {idx}, Task Description: '{actual_task_description}'")
-        
-        self.session_proxy = OpenManusSessionProxy(
-            task_description=actual_task_description,
-            config=self.openmanus_session_config
+        # If there's an old executor, clean it up before creating a new one.
+        if self.tool_executor and hasattr(self.tool_executor, 'cleanup'):
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Schedule and wait for cleanup if loop is running
+                    # This might be an issue if reset is called from a context where await isn't possible
+                    # For now, we assume reset is not called from a deeply synchronous part of an async flow
+                    # or that ensure_future is sufficient for fire-and-forget if await is not possible.
+                    # A better pattern might be to make reset async as well if cleanup must be awaited.
+                    asyncio.ensure_future(self.tool_executor.cleanup())
+                    print("[OpenManusLocalEnvClient] Scheduled cleanup of old tool executor.")
+                else:
+                    # Fallback if no loop is running - this is tricky for async cleanup
+                    # loop.run_until_complete(self.tool_executor.cleanup()) # This would block and might error if loop is closed
+                    print("[OpenManusLocalEnvClient] Warning: Event loop not running. Cleanup of old executor might be incomplete.")
+            except RuntimeError: 
+                 print("[OpenManusLocalEnvClient] Warning: No event loop for cleanup of old executor.")
+            except Exception as e:
+                 print(f"[OpenManusLocalEnvClient] Error during old executor cleanup in reset: {e}")
+
+
+        print(f"[OpenManusLocalEnvClient] Resetting. Task: '{actual_task_desc}'")
+        self.tool_executor = LocalToolExecutor(
+            task_description=actual_task_desc,
+            config=self.executor_config
         )
-        
-        initial_observation = self.session_proxy.get_initial_observation()
-        print(f"[OpenManusEnvClient] Reset complete. Initial obs: {initial_observation[:100]}...")
-        return initial_observation
+        return self.tool_executor.get_initial_observation()
+
+    async def close(self): 
+        print("[OpenManusLocalEnvClient] Closing environment client...")
+        if self.tool_executor:
+            await self.tool_executor.cleanup()
+            self.tool_executor = None # Release reference
+        print("[OpenManusLocalEnvClient] Environment client closed.")
 
 
-class OpenManusTask(BaseTask):
-    env_client_cls = OpenManusEnvClient
-    env_name = "OpenManus" # Name used in OpenManusAgent's ENV_TO_TASK_CLASS map
+class OpenManusLocalTask(BaseTask): # Renamed
+    env_client_cls = OpenManusLocalEnvClient
+    env_name = "openmanus_local" # New name for registration
 
     def __init__(
         self,
-        client_args: Mapping[str, Any],
+        client_args: Mapping[str, Any], 
         n_clients: int,
         *args,
         **kwargs,
     ):
-        print(f"[OpenManusTask] Initializing with client_args: {client_args}, n_clients: {n_clients}")
+        # client_args should contain 'env_server_base', 'data_len', 
+        # and 'env_specific_config' (formerly openmanus_config) for LocalToolExecutor
+        print(f"[OpenManusLocalTask] Initializing with client_args: {client_args}, n_clients: {n_clients}")
         super().__init__(client_args, n_clients, *args, **kwargs)
+
+    async def close(self): # Ensure this is async if BaseTask.close can be awaited or if clients need async close
+        print(f"[{self.env_name}] Closing task and its clients...")
+        # BaseTask.close is not async, so super().close() should be called normally.
+        # The primary concern is ensuring our async clients are closed properly.
+        
+        # Close clients first
+        for client in self.clients:
+            if hasattr(client, 'close') and callable(client.close):
+                try:
+                    await client.close() # Call the async close method of OpenManusLocalEnvClient
+                except Exception as e:
+                    print(f"[{self.env_name}] Error closing client {type(client)}: {e}")
+
+        # Then call superclass close if it exists and is not what we just did for clients
+        # BaseTask.close() in agentenv.controller is synchronous and just iterates self.clients, calling client.close()
+        # if it exists. Since we've already done an async close, we can skip super().close()
+        # or ensure BaseTask.close() is robust to already closed clients or is also made async.
+        # For now, let's assume our client.close() is sufficient.
+        # if hasattr(super(), "close") and callable(super().close):
+        #     try:
+        #          super().close() 
+        #     except Exception as e:
+        #          print(f"[{self.env_name}] Error in super().close(): {e}")
+        print(f"[{self.env_name}] Task and clients closed.")
