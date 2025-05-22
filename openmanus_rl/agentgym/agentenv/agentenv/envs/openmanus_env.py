@@ -51,6 +51,7 @@ class LocalToolExecutor:
         )
         self.task_completed: bool = False
         self.latest_status_info: Dict[str, Any] = {"message": "Session initialized."}
+        self.next_prompt_value = self.config.get("next_prompt_value", "ToolName[json_arguments_string] or ToolName[]")
 
         print(f"[LocalToolExecutor] Initialized for task: '{self.task_description}'. Max steps: {self.max_steps}.")
         print(f"[LocalToolExecutor] Available tools: {list(self.tools.keys())}")
@@ -254,7 +255,8 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
             config=self.executor_config
         )
         initial_obs_string = self.tool_executor.get_initial_observation()
-        return {"observation": initial_obs_string, "next_prompt": ""}
+        initial_next_prompt = self.tool_executor.next_prompt_value
+        return {"observation": initial_obs_string, "next_prompt": initial_next_prompt}
 
     async def close(self): 
         print("[OpenManusLocalEnvClient] Closing environment client...")
