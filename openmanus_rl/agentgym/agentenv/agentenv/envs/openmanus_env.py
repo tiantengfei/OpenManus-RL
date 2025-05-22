@@ -13,6 +13,19 @@ from ..tools.ask_human import AskHuman
 from ..tools.str_replace_editor import StrReplaceEditor, ToolError as EditorToolError
 from ..tools.browser_use_tool_wrapper import BrowserUseToolWrapper, ToolError as BrowserToolError
 
+
+
+SYSTEM_PROMPT = (
+    "You are OpenManus, an all-capable AI assistant, aimed at solving any task presented by the user. You have various tools at your disposal that you can call upon to efficiently complete complex requests. Whether it's programming, information retrieval, file processing, web browsing, or human interaction (only for extreme cases), you can handle it all."
+    "The initial directory is: {directory}"
+)
+
+NEXT_STEP_PROMPT = """
+Based on user needs, proactively select the most appropriate tool or combination of tools. For complex tasks, you can break down the problem and use different tools step by step to solve it. After using each tool, clearly explain the execution results and suggest the next steps.
+
+If you want to stop the interaction at any point, use the `terminate` tool/function call.
+"""
+
 # Define a common ToolError if not already centralized, or use specific ones
 # For now, specific tool errors can be caught, or a general one if defined in base.py
 class ToolError(Exception): # General error for the executor
@@ -51,7 +64,8 @@ class LocalToolExecutor:
         )
         self.task_completed: bool = False
         self.latest_status_info: Dict[str, Any] = {"message": "Session initialized."}
-        self.next_prompt_value = self.config.get("next_prompt_value", "ToolName[json_arguments_string] or ToolName[]")
+        self.next_prompt_value = self.config.get("next_prompt_value", NEXT_STEP_PROMPT)
+        self.system_prompt_value = self.config.get("system_prompt_value", SYSTEM_PROMPT)
 
         print(f"[LocalToolExecutor] Initialized for task: '{self.task_description}'. Max steps: {self.max_steps}.")
         print(f"[LocalToolExecutor] Available tools: {list(self.tools.keys())}")
