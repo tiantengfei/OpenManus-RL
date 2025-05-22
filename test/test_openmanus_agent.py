@@ -62,25 +62,12 @@ class TestOpenManusAgent(unittest.TestCase):
         self.assertEqual(action_types, ["tool_call"])
         self.assertEqual(contents, ["{\"key\": \"value\"}"])
 
-    def test_postprocess_action_tag(self):
-        predictions = ["Some text <action>do_something</action>"]
-        action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["action"])
-        self.assertEqual(contents, ["do_something"])
-
-    def test_postprocess_response_tag(self):
-        predictions = ["<response>This is a response.</response>"]
-        action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["response"])
-        self.assertEqual(contents, ["This is a response."])
-
-    def test_postprocess_mixed_content_action(self):
-        predictions = ["Leading text <action>action_content</action> trailing text"]
-        action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["action"])
-        self.assertEqual(contents, ["action_content"])
+    # test_postprocess_action_tag REMOVED
+    # test_postprocess_response_tag REMOVED
+    # test_postprocess_mixed_content_action REMOVED
         
     def test_postprocess_mixed_content_tool_call(self):
+        # This test verifies that content_str before tool_call doesn't affect parsing of tool_call
         predictions = ["Thought: I need to call a tool. <tool_call>{\"tool_name\": \"calculator\", \"args\": \"1+1\"}</tool_call> Some trailing notes."]
         action_types, contents = self.agent.postprocess_predictions(predictions)
         self.assertEqual(action_types, ["tool_call"])
@@ -97,11 +84,11 @@ class TestOpenManusAgent(unittest.TestCase):
             "Text with <action>action1</action>",
             "<tool_call>{\"tool\": \"tool_A\"}</tool_call>",
             "No tags here.",
-            "<response>response1</response>"
+            "<response>response1</response>" # This will now be None, ""
         ]
         action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["action", "tool_call", None, "response"])
-        self.assertEqual(contents, ["action1", "{\"tool\": \"tool_A\"}", "", "response1"])
+        self.assertEqual(action_types, [None, "tool_call", None, None])
+        self.assertEqual(contents, ["", "{\"tool\": \"tool_A\"}", "", ""])
 
     def test_postprocess_empty_string_prediction(self):
         predictions = [""]
@@ -110,16 +97,23 @@ class TestOpenManusAgent(unittest.TestCase):
         self.assertEqual(contents, [""])
 
     def test_postprocess_tag_with_no_content(self):
-        predictions = ["<action></action>", "<tool_call></tool_call>", "<response></response>"]
+        predictions = [
+            "<action></action>", # Now None, ""
+            "<tool_call></tool_call>", 
+            "<response></response>" # Now None, ""
+        ]
         action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["action", "tool_call", "response"])
+        self.assertEqual(action_types, [None, "tool_call", None])
         self.assertEqual(contents, ["", "", ""])
         
     def test_postprocess_tag_with_whitespace_content(self):
-        predictions = ["<action>  </action>", "<tool_call> \n </tool_call>"]
+        predictions = [
+            "<action>  </action>", # Now None, ""
+            "<tool_call> \n </tool_call>"
+        ]
         action_types, contents = self.agent.postprocess_predictions(predictions)
-        self.assertEqual(action_types, ["action", "tool_call"])
-        self.assertEqual(contents, ["", ""]) # .strip() behavior
+        self.assertEqual(action_types, [None, "tool_call"])
+        self.assertEqual(contents, ["", ""]) # .strip() behavior for tool_call content
 
     def test_postprocess_non_string_prediction(self):
         predictions = [123, None]

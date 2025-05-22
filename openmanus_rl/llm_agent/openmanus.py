@@ -850,36 +850,22 @@ class OpenManusAgent:
         actions = []
         contents = []
 
-        # Regex for the new tool_call format
+        # Regex exclusively for the tool_call format
         tool_call_pattern = r'(.*?)<tool_call>(.*?)</tool_call>'
-        # Regex for existing formats
-        action_pattern = r'<action>(.*?)</action>'
-        response_pattern = r'<response>(.*?)</response>'
 
         for prediction in predictions:
             if isinstance(prediction, str):
                 tool_call_match = re.search(tool_call_pattern, prediction, re.DOTALL)
-                action_match = re.search(action_pattern, prediction, re.DOTALL)
-                response_match = re.search(response_pattern, prediction, re.DOTALL)
 
                 if tool_call_match:
-                    # New format: <tool_call>
-                    # content_str = tool_call_match.group(1).strip() # Not explicitly returned as per requirement
+                    # content_str = tool_call_match.group(1).strip() # Captured but not the primary return for "tool_call"
                     function_json = tool_call_match.group(2).strip()
                     actions.append('tool_call')
                     contents.append(function_json)
-                elif action_match:
-                    # Existing format: <action>
-                    actions.append('action')
-                    contents.append(action_match.group(1).strip())
-                elif response_match:
-                    # Existing format: <response>
-                    actions.append('response')
-                    contents.append(response_match.group(1).strip())
                 else:
-                    # If no recognized tag
+                    # If <tool_call> tag is not found
                     actions.append(None)
-                    contents.append('') # Return empty content if no tag found
+                    contents.append('')
             else:
                 # Handle non-string predictions
                 print(f"[Warning] Received non-string prediction: {type(prediction)}. Cannot process.")
