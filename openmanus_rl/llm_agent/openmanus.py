@@ -590,14 +590,6 @@ class OpenManusAgent:
                     msg_from = msg.get("from", "")
                     if not msg_text: continue
 
-                    # for qwen 
-                    role == 'assistant'
-                    if msg_from == "env":
-                        role = "tool"
-                    else:
-                        role = "user"
-
-                    msg_text = f"<|im_start|>{role}\n{msg_text}<|im_end|>\n"
                     msg_ids = self.tokenizer(msg_text, add_special_tokens=False, return_tensors='pt')['input_ids']
                     conversation_ids_list.append(msg_ids)
                     segment_lengths.append(msg_ids.shape[1])

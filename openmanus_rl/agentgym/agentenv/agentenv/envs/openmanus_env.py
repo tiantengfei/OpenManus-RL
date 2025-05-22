@@ -222,7 +222,7 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
 
         return StepOutput(state=state, reward=reward, done=done)
 
-    def reset(self, idx: int, task_description: Optional[str] = None) -> str: 
+    def reset(self, idx: int, task_description: Optional[str] = None) -> Dict[str, Any]:
         self.current_task_idx = idx
         actual_task_desc = task_description if task_description else f"Default Task ID: {idx}"
 
@@ -253,7 +253,8 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
             task_description=actual_task_desc,
             config=self.executor_config
         )
-        return self.tool_executor.get_initial_observation()
+        initial_obs_string = self.tool_executor.get_initial_observation()
+        return {"observation": initial_obs_string, "next_prompt": ""}
 
     async def close(self): 
         print("[OpenManusLocalEnvClient] Closing environment client...")
