@@ -208,22 +208,25 @@ class OpenManusAgent:
 
             # --- Handle OpenManus next_prompt for initial observation ---
             # Assume reset_info might contain 'next_prompt' from OpenManus environment
+            openmanus_initial_next_prompt = ""
             if reset_info and isinstance(reset_info, dict):
                 openmanus_initial_next_prompt = reset_info.get('next_prompt')
-                if openmanus_initial_next_prompt and isinstance(openmanus_initial_next_prompt, str):
-                    initial_obs_text += " " + openmanus_initial_next_prompt
-                    print(f"[Agent._run_single_rollout][{task_idx}] Appended initial next_prompt from reset_info.")
+                #openmanus_system_prompt = reset_info.get("system_prompt")
 
             # Handle initial observation
+            initial_prompt_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
             if not initial_obs_text:
                 # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Received empty initial observation. Using initial prompt from batch.")
                 # Use the initial prompt text passed in
-                initial_prompt_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
                 trajectory.append({"from": "human", "value": initial_prompt_text})
-                current_input_ids = initial_prompt_ids
+                #current_input_ids = initial_prompt_ids
             else:
-                trajectory.append({"from": "human", "value": initial_obs_text})
-                current_input_ids = self.tokenizer(initial_obs_text, return_tensors='pt', add_special_tokens=False)['input_ids']
+                initial_prompt_text = f"{initial_obs_text}<|im_start|>user\n{initial_prompt_text}<|im_end|>\n"
+                trajectory.append({"from": "env", "value": initial_obs_text})
+                trajectory.append({"from": "human", "value": initial_prompt_text})
+
+            initial_prompt_text += "<|im_start|>assistant\n"
+            current_input_ids = self.tokenizer(initial_prompt_text, return_tensors='pt', add_special_tokens=False)['input_ids']
 
             # --- Interaction Loop --- 
             for t in range(self.config.max_turns):
@@ -316,17 +319,19 @@ class OpenManusAgent:
                 # This helps the RewardComposer access step-specific info if needed
                 trajectory[-1]['reward'] = reward
                 trajectory[-1]['info'] = info
+                openmanus_step_next_prompt = openmanus_initial_next_prompt
 
                 # Process next observation
                 if not done:
                     # --- Handle OpenManus next_prompt for subsequent observations ---
-                    openmanus_step_next_prompt = info.get('next_prompt')
-                    if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text += " " + openmanus_step_next_prompt
-                        print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Appended next_prompt from step_output.info.")
-                    
-                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
+                    #openmanus_step_next_prompt = info.get('next_prompt')
                     trajectory.append({"from": "env", "value": next_obs_text})
+                    next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
+                    if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
+                        next_obs_text = f"{next_obs_next}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                        trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
+                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
+                    next_obs_text += "<|im_start|>assistant\n"
                     next_obs_ids = self.tokenizer(next_obs_text, return_tensors='pt', add_special_tokens=False)['input_ids']
                     # Ensure tensors are concatenated on the same device (e.g., CPU or model's device if needed later)
                     current_input_ids = torch.cat([

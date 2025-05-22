@@ -57,15 +57,11 @@ class LocalToolExecutor:
         }
         
         self.current_step: int = 0
-        self.current_observation_text: str = (
-            f"Task initialized: '{self.task_description}'. "
-            f"Available tools: {', '.join(self.tools.keys())}. "
-            f"Use tools in format: ToolName[json_arguments_string] or ToolName[]."
-        )
         self.task_completed: bool = False
         self.latest_status_info: Dict[str, Any] = {"message": "Session initialized."}
         self.next_prompt_value = self.config.get("next_prompt_value", NEXT_STEP_PROMPT)
         self.system_prompt_value = self.config.get("system_prompt_value", SYSTEM_PROMPT)
+        self.current_observation_text: str = f"<|im_start|>system\n{self.system_prompt_value}<|im_end|>\n"
 
         print(f"[LocalToolExecutor] Initialized for task: '{self.task_description}'. Max steps: {self.max_steps}.")
         print(f"[LocalToolExecutor] Available tools: {list(self.tools.keys())}")
