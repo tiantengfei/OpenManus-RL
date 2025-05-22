@@ -63,30 +63,43 @@ class LocalToolExecutor:
 
     async def process_action(self, action_str: str) -> None:
         self.current_step += 1
-        # Regex to match ToolName[args_json_string] or ToolName[]
-        tool_call_match = re.match(r"^\s*(\w+)\s*\[\s*(.*)\s*\]\s*$", action_str)
-
         tool_executed_successfully = False
-        # tool_output = "" # Not strictly needed here as current_observation_text is set directly
         
         if self.task_completed: # Prevent action if already completed
             self.current_observation_text = "Tried to act on a completed task. No state change."
             print("[LocalToolExecutor] Warning: Action processed on already completed task.")
             return
 
-        if tool_call_match:
-            tool_name = tool_call_match.group(1)
-            args_str = tool_call_match.group(2).strip() # Arguments string, could be empty
+        try:
+            parsed_action = json.loads(action_str)
+            if not isinstance(parsed_action, dict):
+                raise ToolError("Action must be a JSON object (dict).")
+
+            tool_name = parsed_action.get("function_name")
+            if not tool_name:
+                raise ToolError("Missing 'function_name' in action JSON.")
+
+            args = parsed_action.get("arguments")
+            if args is None:
+                args = {}
+            elif not isinstance(args, dict):
+                # Attempt to parse arguments if it's a string, otherwise default to empty dict
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                        if not isinstance(args, dict):
+                            print(f"[LocalToolExecutor] Warning: 'arguments' field, when parsed from string, was not a dict. Type: {type(args)}. Using empty dict for tool args.")
+                            args = {}
+                    except json.JSONDecodeError:
+                        print(f"[LocalToolExecutor] Warning: 'arguments' field was a string but not valid JSON: {args}. Using empty dict for tool args.")
+                        args = {}
+                else:
+                    print(f"[LocalToolExecutor] Warning: 'arguments' field was not a dict or JSON string. Type: {type(args)}. Using empty dict for tool args.")
+                    args = {}
             
             if tool_name in self.tools:
                 tool = self.tools[tool_name]
                 try:
-                    args = {}
-                    if args_str: # If args_str is not empty, try to parse as JSON
-                        args = json.loads(args_str)
-                        if not isinstance(args, dict):
-                             raise ToolError("Arguments must be a JSON object (dict). Found: " + str(type(args)))
-                    
                     # Execute the tool
                     self.current_observation_text = await tool.execute(**args) # Tool output becomes new observation
                     tool_executed_successfully = True 
@@ -98,28 +111,32 @@ class LocalToolExecutor:
                             "success": status == "success",
                             "message": f"Terminated by agent with status: {status}"
                         }
-                except json.JSONDecodeError:
-                    self.current_observation_text = f"Error: Invalid JSON arguments for tool {tool_name}: '{args_str}'"
-                    self.latest_status_info = {"success": False, "message": "Tool argument JSON parsing error."}
-                except (ToolError, BrowserToolError, EditorToolError) as e: # Catch specific tool errors
+                # Specific tool errors are caught first
+                except (ToolError, BrowserToolError, EditorToolError) as e: 
                     self.current_observation_text = f"Error executing tool {tool_name}: {e}"
                     self.latest_status_info = {"success": False, "message": f"Tool error: {e}"}
                 except TypeError as e: # Catch argument mismatch errors (e.g. missing required arg)
-                     self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args_str}"
+                     self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args}"
                      self.latest_status_info = {"success": False, "message": f"Tool argument mismatch: {e}"}
-                except Exception as e:
+                except Exception as e: # Catch any other unexpected error during tool execution
                     self.current_observation_text = f"Unexpected error executing tool {tool_name}: {str(e)}"
                     self.latest_status_info = {"success": False, "message": f"Unexpected tool error: {e}"}
             else:
                 self.current_observation_text = f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.keys())}"
                 self.latest_status_info = {"success": False, "message": "Unknown tool."}
-        else: 
+        
+        except json.JSONDecodeError:
             self.current_observation_text = (
-                f"Received message: '{action_str}'. This is not a valid tool call. "
-                f"Please use ToolName[json_arguments_string] or ToolName[] format. "
-                f"Available tools: {', '.join(self.tools.keys())}"
+                f"Error: Action is not a valid JSON string: '{action_str}'. "
+                f"Please provide action in JSON format with 'function_name' and 'arguments'."
             )
-            self.latest_status_info = {"success": False, "message": "Non-tool action / command format not understood."}
+            self.latest_status_info = {"success": False, "message": "Action JSON parsing error."}
+        except ToolError as e: # Catch custom ToolErrors raised from our parsing logic
+            self.current_observation_text = f"Error: Invalid action format. {e}"
+            self.latest_status_info = {"success": False, "message": f"Invalid action format: {e}"}
+        except Exception as e: # Catch any other unexpected error during action parsing
+            self.current_observation_text = f"Unexpected error processing action: {str(e)}"
+            self.latest_status_info = {"success": False, "message": f"Unexpected action processing error: {e}"}
 
         if not self.task_completed and self.current_step >= self.max_steps:
             self.task_completed = True
