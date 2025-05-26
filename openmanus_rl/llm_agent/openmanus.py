@@ -237,7 +237,6 @@ class OpenManusAgent:
 
             # Handle initial observation
             initial_prompt_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
-            print("instruction:", initial_prompt_text)
             if not initial_obs_text:
                 # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Received empty initial observation. Using initial prompt from batch.")
                 # Use the initial prompt text passed in
@@ -249,19 +248,18 @@ class OpenManusAgent:
                 trajectory.append({"from": "human", "value": initial_prompt_text})
 
             initial_prompt_text += "<|im_start|>assistant\n"
-            print("initial_prompt_text:", initial_prompt_text)
             current_input_ids = self.tokenizer(initial_prompt_text, return_tensors='pt', add_special_tokens=False)['input_ids']
 
             # --- Interaction Loop --- 
             for t in range(self.config.max_turns):
                 turns = t + 1
                 if current_input_ids is None:
-                    print(f"[Agent._run_single_rollout][{task_idx}] Breaking loop: current_input_ids is None")
+                    # print(f"[Agent._run_single_rollout][{task_idx}] Breaking loop: current_input_ids is None")
                     break
 
                 # Handle input that exceeds max length
                 if current_input_ids.shape[1] > self.config.max_prompt_length:
-                    print(f"[Agent._run_single_rollout][{task_idx} ] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
+                    # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
                     current_input_ids = current_input_ids[:, -self.config.max_prompt_length:]
 
                 # Prepare input
@@ -352,7 +350,7 @@ class OpenManusAgent:
                     trajectory.append({"from": "env", "value": next_obs_text})
                     next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
                     if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                        next_obs_text = f"{next_obs_next}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
                         trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
                     next_obs_text += "<|im_start|>assistant\n"
@@ -881,7 +879,6 @@ class OpenManusAgent:
 
         # Regex exclusively for the tool_call format
         tool_call_pattern = r'(.*?)<tool_call>(.*?)</tool_call>'
-        print("predictions:", predictions)
 
         for prediction in predictions:
             if isinstance(prediction, str):

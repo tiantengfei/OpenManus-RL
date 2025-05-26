@@ -55,16 +55,52 @@ class LocalToolExecutor:
             self.str_replace_editor_tool.name: self.str_replace_editor_tool,
             self.browser_tool.name: self.browser_tool,
         }
+
+        # Dynamically construct the system prompt
+        base_system_message = "You are OpenManus, an all-capable AI assistant, aimed at solving any task presented by the user. You have various tools at your disposal that you can call upon to efficiently complete complex requests. Whether it's programming, information retrieval, file processing, web browsing, or human interaction (only for extreme cases), you can handle it all."
+        core_message = base_system_message # Default
+
+        tools_section_str = ""
+        if self.tools:
+            tools_list_parts = []
+            for tool in self.tools.values():
+                schema_dict = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                }
+                tools_list_parts.append(json.dumps(schema_dict))
+            
+            tools_details = "\n".join(tools_list_parts)
+
+            tools_section_str = (
+                "\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+                "You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n"
+                f"{tools_details}\n"
+                "</tools>\n\n"
+                "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n"
+                "<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call>"
+            )
+
+        # Assemble the final system prompt value
+        # It includes the full structure with <|im_start|> and <|im_end|> tags and a trailing newline.
+        self.system_prompt_value = (
+            f"<|im_start|>system\n{core_message}{tools_section_str}<|im_end|>\n"
+        )
+        
+        # The initial observation is simply the system prompt.
+        self.current_observation_text = self.system_prompt_value
         
         self.current_step: int = 0
         self.task_completed: bool = False
         self.latest_status_info: Dict[str, Any] = {"message": "Session initialized."}
         self.next_prompt_value = self.config.get("next_prompt_value", NEXT_STEP_PROMPT)
-        self.system_prompt_value = self.config.get("system_prompt_value", SYSTEM_PROMPT)
-        self.current_observation_text: str = f"<|im_start|>system\n{self.system_prompt_value}<|im_end|>\n"
+        # self.system_prompt_value is now set dynamically above
+        # self.current_observation_text is also set dynamically above
 
         print(f"[LocalToolExecutor] Initialized for task: '{self.task_description}'. Max steps: {self.max_steps}.")
         print(f"[LocalToolExecutor] Available tools: {list(self.tools.keys())}")
+        print(f"[LocalToolExecutor] System Prompt: {self.system_prompt_value[:500]}...") # Log part of the new prompt
 
     def get_initial_observation(self) -> str:
         return self.current_observation_text
