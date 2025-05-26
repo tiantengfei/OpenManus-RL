@@ -220,13 +220,24 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
         print("[OpenManusLocalEnvClient] Observe called before reset or executor is None.")
         return "Environment not initialized. Please call reset."
 
-    async def step(self, action: str) -> StepOutput: # Made async
+    def step(self, action: str) -> StepOutput: # Made synchronous
         if not self.tool_executor:
             print("[OpenManusLocalEnvClient] Step called before reset or executor is None.")
             return StepOutput(state="Error: Tool executor not initialized.", reward=0.0, done=True)
 
-        await self.tool_executor.process_action(action) # process_action is now async
-        
+        try:
+            # Run the async process_action method using asyncio.run()
+            # This creates a new event loop, runs the coroutine, and closes the loop.
+            asyncio.run(self.tool_executor.process_action(action))
+        except RuntimeError as e:
+            if "asyncio.run() cannot be called from a running event loop" in str(e):
+                print("[OpenManusLocalEnvClient][ERROR] asyncio.run() cannot be called from a running event loop. This indicates a conflict with the current threading/async setup, possibly within Ray. The application's async model needs review for proper integration.")
+                # Re-raising allows the higher-level framework (Ray) to catch this critical error.
+                raise RuntimeError(f"Asyncio conflict in OpenManusLocalEnvClient.step: {e}. Check async execution context.") from e
+            else:
+                # Re-raise other RuntimeErrors (e.g., loop closed, etc.)
+                raise
+
         state = self.tool_executor.get_current_observation()
         reward = self.tool_executor.get_reward()
         done = self.tool_executor.is_done()
