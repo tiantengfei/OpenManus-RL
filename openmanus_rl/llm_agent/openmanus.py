@@ -237,6 +237,7 @@ class OpenManusAgent:
 
             # Handle initial observation
             initial_prompt_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
+            print("instruction:", initial_prompt_text)
             if not initial_obs_text:
                 # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Received empty initial observation. Using initial prompt from batch.")
                 # Use the initial prompt text passed in
@@ -248,6 +249,7 @@ class OpenManusAgent:
                 trajectory.append({"from": "human", "value": initial_prompt_text})
 
             initial_prompt_text += "<|im_start|>assistant\n"
+            print("initial_prompt_text:", initial_prompt_text)
             current_input_ids = self.tokenizer(initial_prompt_text, return_tensors='pt', add_special_tokens=False)['input_ids']
 
             # --- Interaction Loop --- 
@@ -259,7 +261,7 @@ class OpenManusAgent:
 
                 # Handle input that exceeds max length
                 if current_input_ids.shape[1] > self.config.max_prompt_length:
-                    print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
+                    print(f"[Agent._run_single_rollout][{task_idx} ] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
                     current_input_ids = current_input_ids[:, -self.config.max_prompt_length:]
 
                 # Prepare input
@@ -879,6 +881,7 @@ class OpenManusAgent:
 
         # Regex exclusively for the tool_call format
         tool_call_pattern = r'(.*?)<tool_call>(.*?)</tool_call>'
+        print("predictions:", predictions)
 
         for prediction in predictions:
             if isinstance(prediction, str):
