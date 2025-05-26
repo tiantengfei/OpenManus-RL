@@ -366,7 +366,7 @@ class OpenManusAgent:
                     trajectory.append({"from": "env", "value": next_obs_text})
                     next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
                     if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text = f"{next_obs_next}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                        next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
                         trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
                     next_obs_text += "<|im_start|>assistant\n"

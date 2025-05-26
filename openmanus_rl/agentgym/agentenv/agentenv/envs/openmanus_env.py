@@ -168,9 +168,9 @@ class LocalToolExecutor:
                 if not isinstance(action_item, dict): # Each item in array must be a dict
                     raise ToolError(f"Invalid action item: expected a JSON object, got {type(action_item)}. Item: '{action_item}'")
                 
-                tool_name = action_item.get("function_name")
+                tool_name = action_item.get("name")
                 if not tool_name:
-                    raise ToolError("Missing 'function_name' in action item.")
+                    raise ToolError("Missing 'name' in action item.")
 
                 args = action_item.get("arguments")
                 if args is None:
