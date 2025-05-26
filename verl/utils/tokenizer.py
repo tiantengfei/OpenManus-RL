@@ -14,7 +14,7 @@
 """Utils for tokenization."""
 import warnings
 
-__all__ = ['hf_tokenizer']
+__all__ = ['hf_tokenizer', 'set_pad_token_id']
 
 
 def set_pad_token_id(tokenizer):

@@ -52,7 +52,7 @@ WorkerType = Type[Worker]
 KNOWN_AGENTGYM_ENVS = [
     "webshop", "webarena", "maze", "wordle", "alfworld", 
     "sciworld", "babyai", "textcraft", "weather", "movie", 
-    "academia", "todo", "sheet", "sqlgym"
+    "academia", "todo", "sheet", "sqlgym", "openmanus_local"
 ]
 
 class Role(Enum):

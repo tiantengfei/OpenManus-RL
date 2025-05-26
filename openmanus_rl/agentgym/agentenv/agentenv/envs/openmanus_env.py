@@ -3,7 +3,7 @@ import json
 import re # For parsing tool calls
 import asyncio
 
-from agentenv.controller import BaseEnvClient, BaseTask, StepOutput, ConversationMessage
+from ..agentenv.controller import BaseEnvClient, BaseTask, StepOutput, ConversationMessage
 
 # Import tools (assuming they are in ../tools/)
 from ..tools.base import BaseTool
