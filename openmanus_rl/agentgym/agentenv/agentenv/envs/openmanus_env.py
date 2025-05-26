@@ -122,9 +122,9 @@ class LocalToolExecutor:
             if not isinstance(parsed_action, dict):
                 raise ToolError("Action must be a JSON object (dict).")
 
-            tool_name = parsed_action.get("function_name")
+            tool_name = parsed_action.get("name")
             if not tool_name:
-                raise ToolError("Missing 'function_name' in action JSON.")
+                raise ToolError("Missing 'name' in action JSON.")
 
             args = parsed_action.get("arguments")
             if args is None:
