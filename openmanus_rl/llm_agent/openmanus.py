@@ -99,71 +99,93 @@ class OpenManusAgent:
         print(f"[Info] Initializing ThreadPoolExecutor with {actual_workers} workers for {num_clients} clients.")
         self.executor = ThreadPoolExecutor(max_workers=actual_workers)
 
-    def _init_env_clients(self) -> List[Any]: # Renamed and return type changed
-        """
-        Initialize and return a list of specific AgentGym environment clients
-        based on the ports provided in the config.
-        """
+    def _init_env_clients(self) -> List[Any]:
         clients = []
         env_name_lower = self.config.env_name.lower()
 
-        # Mapping from env_name (lowercase) to Task class name
         ENV_TO_TASK_CLASS = {
             "academia": "AcademiaTask", "alfworld": "AlfWorldTask", "babyai": "BabyAITask",
             "maze": "MazeTask", "wordle": "WordleTask", "movie": "MovieTask",
             "sciworld": "SciworldTask", "sheet": "SheetTask", "sqlgym": "SqlGymTask",
             "textcraft": "TextCraftTask", "todo": "TodoTask", "weather": "WeatherTask",
             "webarena": "WebarenaTask", "webshop": "WebshopTask",
-            "openmanus_local": "OpenManusLocalTask", # Updated
+            "openmanus_local": "OpenManusLocalTask",
         }
 
         if env_name_lower not in ENV_TO_TASK_CLASS:
             raise ValueError(f"Unsupported environment name: {self.config.env_name}. Supported: {list(ENV_TO_TASK_CLASS.keys())}")
 
         task_class_name = ENV_TO_TASK_CLASS[env_name_lower]
-        print(f"[Info] Initializing {len(self.config.env_ports)} Env Client(s) for: {self.config.env_name} (via Task: {task_class_name})")
+        print(f"[Info] Initializing for: {self.config.env_name} (Task: {task_class_name})")
 
-        # Dynamically import the Task class
         try:
             envs_module = importlib.import_module("agentenv.envs")
             TaskClass = getattr(envs_module, task_class_name)
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Could not import Task class {task_class_name} from agentenv.envs: {e}")
 
-        for i, port in enumerate(self.config.env_ports):
-            server_url = f"{self.config.env_server_base}:{port}"
-            print(f"  - Client {i+1}: Connecting to {server_url}")
+        if env_name_lower == "openmanus_local":
+            num_local_instances = len(self.config.env_ports) # Using length of env_ports for number of instances
+            if num_local_instances == 0:
+                print("[Warning] env_ports is empty for openmanus_local. Assuming 1 instance.")
+                num_local_instances = 1 # Default to 1 instance if env_ports is empty
 
-            client_args={
-                "env_server_base": server_url,
-                "data_len": self.config.env_data_len,
-                "timeout": 300,
-            }
+            print(f"[Info] Creating {num_local_instances} local instance(s) of OpenManusLocalEnvClient.")
+            for i in range(num_local_instances):
+                env_specific_config = {}
+                if self.config.algorithm_config and hasattr(self.config.algorithm_config, 'env_specific_config'):
+                    env_specific_config = self.config.algorithm_config.env_specific_config
+                elif self.config.algorithm_config and isinstance(self.config.algorithm_config, dict) :
+                    env_specific_config = self.config.algorithm_config.get("env_specific_config", {})
+                
+                local_client_args = {
+                    "data_len": self.config.env_data_len,
+                    "timeout": 300,  # Or from a specific config if available
+                    "env_specific_config": env_specific_config,
+                    # env_server_base is not strictly needed by OpenManusLocalEnvClient's constructor
+                    # but BaseEnvClient (its parent) might expect it.
+                    # For OpenManusLocalEnvClient, it's not used for connection.
+                    # We can pass a dummy or a generic value if BaseEnvClient requires it.
+                    "env_server_base": f"local_instance_{i}" 
+                }
+                try:
+                    EnvClientClass = TaskClass.env_client_cls # This should be OpenManusLocalEnvClient
+                    local_env_client = EnvClientClass(**local_client_args)
+                    clients.append(local_env_client)
+                    print(f"  - Local Instance {i+1}: Successfully created {type(local_env_client)}")
+                except Exception as e:
+                    print(f"  - Local Instance {i+1}: Error creating {TaskClass.env_client_cls.__name__ if hasattr(TaskClass, 'env_client_cls') else 'env client'}: {e}")
+                    print(traceback.format_exc())
+        else:
+            # Original logic for other (networked) environments
+            print(f"[Info] Initializing {len(self.config.env_ports)} network Env Client(s) for: {self.config.env_name}")
+            for i, port in enumerate(self.config.env_ports):
+                server_url = f"{self.config.env_server_base}:{port}"
+                print(f"  - Client {i+1}: Connecting to {server_url}")
 
-            try:
-                # Instantiate the task to get the client.
-                # We need one client per specified port.
-                # Assuming TaskClass handles client creation correctly when n_clients=1.
-                # If TaskClass itself manages multiple internal clients, this might need adjustment.
-                task_instance = TaskClass(client_args=client_args, n_clients=1)
-                if hasattr(task_instance, 'clients') and task_instance.clients:
-                    client = task_instance.clients[0]
-                    print(f"  - Client {i+1}: Successfully obtained client: {type(client)}")
-                    clients.append(client)
-                else:
-                     print(f"  - Client {i+1}: Error - Task class {task_class_name} did not provide a client for port {port}.")
-                     # Decide how to handle failure: raise error or skip this client? Skipping for now.
-                     # raise ValueError(f"Task class {task_class_name} did not provide a client for port {port}.")
-            except Exception as e:
-                 print(f"  - Client {i+1}: Error initializing Task or getting client for port {port}: {e}")
-                 print(traceback.format_exc())
-                 # Decide how to handle failure: raise error or skip? Skipping for now.
-                 # raise
+                # These client_args are for the TaskClass constructor
+                task_client_args = {
+                    "env_server_base": server_url,
+                    "data_len": self.config.env_data_len,
+                    "timeout": 300,
+                    # If other tasks also need env_specific_config, it should be added here too
+                }
+                try:
+                    task_instance = TaskClass(client_args=task_client_args, n_clients=1)
+                    if hasattr(task_instance, 'clients') and task_instance.clients:
+                        client = task_instance.clients[0]
+                        print(f"  - Client {i+1}: Successfully obtained client: {type(client)}")
+                        clients.append(client)
+                    else:
+                        print(f"  - Client {i+1}: Error - Task class {task_class_name} did not provide a client for port {port}.")
+                except Exception as e:
+                    print(f"  - Client {i+1}: Error initializing Task or getting client for port {port}: {e}")
+                    print(traceback.format_exc())
 
         if not clients:
             raise RuntimeError("Failed to initialize any environment clients.")
 
-        print(f"[Info] Successfully initialized {len(clients)} environment clients.")
+        print(f"[Info] Successfully initialized {len(clients)} environment interfaces.")
         return clients
 
     def _batch_tokenize(self, responses: List[str]) -> torch.Tensor:
