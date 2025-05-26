@@ -125,7 +125,7 @@ class OpenManusAgent:
 
         # Dynamically import the Task class
         try:
-            envs_module = importlib.import_module("agentenv.envs")
+            envs_module = importlib.import_module("openmanus_rl.agentgym.agentenv.agentenv.envs")
             TaskClass = getattr(envs_module, task_class_name)
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Could not import Task class {task_class_name} from agentenv.envs: {e}")
