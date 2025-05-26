@@ -230,33 +230,31 @@ class LocalToolExecutor:
             if tool_executed_successfully_item:
                  tool_executed_successfully_overall = True
 
+        # After loop, final checks
+        if not self.task_completed and self.current_step >= self.max_steps:
+            self.task_completed = True
+            # Append to observation rather than replacing, so prior tool output isn't lost if multiple tools ran
+            self.current_observation_text += "\nMax steps reached. Episode terminated."
+            self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
+        
+        # Update overall status info if loop completed and no specific error/termination occurred that already set it.
+        # This logic ensures that if the loop was for an empty list `[]`, the status remains "Empty action list processed."
+        # If tools ran, it defaults to "Tool(s) executed" if no specific error/termination message was set by the last action.
+        if not self.task_completed: # Only if not already completed by a tool or max_steps
+            if parsed_actions and tool_executed_successfully_overall:
+                 # If the latest_status_info is still the one from successful parsing of non-empty list,
+                 # or if it's a generic success from the last tool, make it more general.
+                if self.latest_status_info.get("message") == "Actions parsed." or \
+                   (self.latest_status_info.get("success") and "executed" in self.latest_status_info.get("message", "")):
+                     self.latest_status_info = {"success": True, "message": "Tool(s) executed."}
+            elif not parsed_actions and self.latest_status_info.get("message") == "Empty action list processed.":
+                pass # Keep the "Empty action list processed" status
+            # If parsing failed, latest_status_info is already set to the parsing error.
+            # If a tool failed, latest_status_info reflects that tool's error.
 
-    # After loop, final checks
-    if not self.task_completed and self.current_step >= self.max_steps:
-        self.task_completed = True
-        # Append to observation rather than replacing, so prior tool output isn't lost if multiple tools ran
-        self.current_observation_text += "\nMax steps reached. Episode terminated."
-        self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
-    
-    # Update overall status info if loop completed and no specific error/termination occurred that already set it.
-    # This logic ensures that if the loop was for an empty list `[]`, the status remains "Empty action list processed."
-    # If tools ran, it defaults to "Tool(s) executed" if no specific error/termination message was set by the last action.
-    if not self.task_completed: # Only if not already completed by a tool or max_steps
-        if parsed_actions and tool_executed_successfully_overall:
-             # If the latest_status_info is still the one from successful parsing of non-empty list,
-             # or if it's a generic success from the last tool, make it more general.
-            if self.latest_status_info.get("message") == "Actions parsed." or \
-               (self.latest_status_info.get("success") and "executed" in self.latest_status_info.get("message", "")):
-                 self.latest_status_info = {"success": True, "message": "Tool(s) executed."}
-        elif not parsed_actions and self.latest_status_info.get("message") == "Empty action list processed.":
-            pass # Keep the "Empty action list processed" status
-        # If parsing failed, latest_status_info is already set to the parsing error.
-        # If a tool failed, latest_status_info reflects that tool's error.
-
-    # Print final state for this step
-    print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{action_str}', Done={self.task_completed}")
-    print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
-
+        # Print final state for this step
+        print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{action_str}', Done={self.task_completed}")
+        print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
 
     def is_done(self) -> bool:
         return self.task_completed
