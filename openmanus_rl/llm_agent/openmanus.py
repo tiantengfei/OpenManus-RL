@@ -254,12 +254,12 @@ class OpenManusAgent:
             for t in range(self.config.max_turns):
                 turns = t + 1
                 if current_input_ids is None:
-                    # print(f"[Agent._run_single_rollout][{task_idx}] Breaking loop: current_input_ids is None")
+                    print(f"[Agent._run_single_rollout][{task_idx}] Breaking loop: current_input_ids is None")
                     break
 
                 # Handle input that exceeds max length
                 if current_input_ids.shape[1] > self.config.max_prompt_length:
-                    # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
+                    print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Truncating input {current_input_ids.shape} > {self.config.max_prompt_length}.")
                     current_input_ids = current_input_ids[:, -self.config.max_prompt_length:]
 
                 # Prepare input
@@ -350,7 +350,7 @@ class OpenManusAgent:
                     trajectory.append({"from": "env", "value": next_obs_text})
                     next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
                     if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text = f"{next_obs_next}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                        next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
                         trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
                     next_obs_text += "<|im_start|>assistant\n"
