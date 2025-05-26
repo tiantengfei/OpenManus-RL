@@ -15,7 +15,7 @@
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other main.
 """
 
-from verl import DataProto
+from verl.protocol import DataProto
 import torch
 from verl.utils.reward_score import qa_em
 # from verl.utils.reward_score import agentgym # Keep for _select_rm_score_fn if used
@@ -34,7 +34,7 @@ def _select_rm_score_fn(data_source):
     KNOWN_AGENTGYM_ENVS = [
         "webshop", "webarena", "maze", "wordle", "alfworld", 
         "sciworld", "babyai", "textcraft", "weather", "movie", 
-        "academia", "todo", "sheet", "sqlgym"
+        "academia", "todo", "sheet", "sqlgym", "openmanus_local"
     ]
     
     # Check if data source is an AgentGym environment
@@ -248,7 +248,7 @@ def main_task(config):
     KNOWN_AGENTGYM_ENVS = [
         "webshop", "webarena", "maze", "wordle", "alfworld",
         "sciworld", "babyai", "textcraft", "weather", "movie",
-        "academia", "todo", "sheet", "sqlgym"
+        "academia", "todo", "sheet", "sqlgym", "openmanus_local"
     ]
     is_agentgym_run = config.data.env_name in KNOWN_AGENTGYM_ENVS
     print(f"Environment: {config.data.env_name}, AgentGym run: {is_agentgym_run}")
