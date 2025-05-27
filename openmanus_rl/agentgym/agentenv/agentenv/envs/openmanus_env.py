@@ -108,120 +108,148 @@ class LocalToolExecutor:
     def get_current_observation(self) -> str:
         return self.current_observation_text
 
-    async def process_action(self, actions: List[str]) -> None: # Signature changed
-        self.current_step += 1 # Increment step counter once per call
+    async def process_action(self, actions: List[str]) -> None:
+        self.current_step += 1
         tool_executed_successfully_overall = False
+        observation_parts = [] # New: Initialize list for observation parts
 
         if self.task_completed:
+            # This part remains the same, sets current_observation_text directly
             self.current_observation_text = "Tried to act on a completed task. No state change."
             print("[LocalToolExecutor] Warning: Action processed on already completed task.")
             return
 
-        # Handle empty input actions list
         if not actions:
-            self.current_observation_text = "Received an empty list of actions."
+            self.current_observation_text = "No actions were performed." # New: Specific message
             self.latest_status_info = {"success": True, "message": "Empty action list processed."}
-            # Max steps check for empty actions
+            # Max steps check for this scenario
             if not self.task_completed and self.current_step >= self.max_steps:
                 self.task_completed = True
-                self.current_observation_text += "\nMax steps reached. Episode terminated due to empty actions at max steps."
-                self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
+                # Append to the "No actions" message if max steps reached here
+                self.current_observation_text += "\nMax steps reached. Episode terminated."
+                self.latest_status_info = {"success": False, "message": "Terminated due to max steps with empty action."}
             print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{actions}', Done={self.task_completed}")
             print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
             return
             
-        # Default status for non-empty actions list; will be updated by individual actions
-        self.latest_status_info = {"success": False, "message": "Processing actions."}
+        self.latest_status_info = {"success": False, "message": "Processing actions."} # Default for non-empty list
 
-        for action_json_string in actions:
-            if self.task_completed: # If a previous tool call in this sequence already terminated
+        for i, action_json_string in enumerate(actions):
+            if self.task_completed:
                 break 
 
             action_item = None
+            tool_name = "UnknownTool" # Default for logging if tool_name cannot be extracted
+            args_for_log = {} # Default for logging
             tool_executed_successfully_item = False
-            
+            formatted_action_observation = ""
+
             try:
-                # Parse the individual action string
                 action_item = json.loads(action_json_string)
                 if not isinstance(action_item, dict):
                     raise ToolError(f"Parsed action is not a dictionary. Action string: '{action_json_string}'")
 
                 tool_name = action_item.get("function_name")
                 if not tool_name:
-                    raise ToolError("Missing 'function_name' in action item.")
+                    # Specific error for missing function_name, before calling_tool_line
+                    error_message = f"Error: Missing 'function_name' in action: {action_json_string}"
+                    observation_parts.append(f"{i+1}. {error_message}")
+                    self.latest_status_info = {"success": False, "message": "Missing 'function_name'."}
+                    continue # to next action_json_string
 
                 args = action_item.get("arguments")
                 if args is None: args = {}
                 elif not isinstance(args, dict):
-                    if isinstance(args, str): # Try to parse if arguments is a string
-                        try:
-                            args = json.loads(args)
-                            if not isinstance(args, dict):
-                                print(f"[LocalToolExecutor] Warning: Parsed 'arguments' string was not a dict. Action: {action_json_string}")
-                                args = {}
-                        except json.JSONDecodeError:
-                            print(f"[LocalToolExecutor] Warning: 'arguments' string is not valid JSON. Action: {action_json_string}")
-                            args = {}
-                    else: # Not a dict or string
-                        print(f"[LocalToolExecutor] Warning: 'arguments' is not a dict or JSON string. Action: {action_json_string}")
-                        args = {}
-                
+                    # Simplified args validation for logging, actual validation in tool
+                    print(f"[LocalToolExecutor] Warning: 'arguments' in action is not a dict. Action: {action_json_string}")
+                    # Depending on tool, this might be an error or handled by tool's arg parsing
+                args_for_log = args # For use in calling_tool_line
+
+                calling_tool_line = f"Calling tool {tool_name}: {json.dumps(args_for_log)}"
+
                 if tool_name in self.tools:
                     tool = self.tools[tool_name]
-                    self.current_observation_text = await tool.execute(**args) # await tool execution
+                    tool_result = await tool.execute(**args)
                     tool_executed_successfully_item = True
                     self.latest_status_info = {"success": True, "message": f"Tool {tool_name} executed."}
+                    formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nResult: {tool_result}"
+                    observation_parts.append(formatted_action_observation)
 
                     if tool_name == self.terminate_tool.name:
                         self.task_completed = True
                         status_arg = args.get("status", "success")
                         self.latest_status_info = {"success": status_arg == "success", "message": f"Terminated by agent with status: {status_arg}"}
-                        break # Break from processing further actions in the list
+                        # Observation from Terminate tool is its result, already captured.
+                        break 
                 else:
-                    self.current_observation_text = f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.keys())}"
+                    error_message = f"Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.keys())}"
+                    formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nError: {error_message}"
+                    observation_parts.append(formatted_action_observation)
                     self.latest_status_info = {"success": False, "message": f"Unknown tool: {tool_name}."}
 
             except json.JSONDecodeError:
-                self.current_observation_text = f"Error: Action is not a valid JSON string: '{action_json_string}'."
+                error_message = f"Could not parse action JSON: {action_json_string}"
+                observation_parts.append(f"{i+1}. Error: {error_message}")
                 self.latest_status_info = {"success": False, "message": "Action JSON parsing error."}
-                continue # Move to the next action string if current one is unparsable
-            except ToolError as e:
-                self.current_observation_text = f"Error processing action item '{str(action_item)[:100]}...': {e}"
-                self.latest_status_info = {"success": False, "message": f"Invalid action item: {e}"}
-            # Specific tool execution errors
+                continue 
+            except ToolError as e: # Covers missing function_name if not caught earlier, or other validation issues
+                error_message = str(e)
+                # calling_tool_line might not be fully formed if tool_name was missing
+                if 'calling_tool_line' not in locals(): # tool_name might be missing
+                    calling_tool_line = f"Attempted call with malformed action: {action_json_string}"
+                formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nError: {error_message}"
+                observation_parts.append(formatted_action_observation)
+                self.latest_status_info = {"success": False, "message": f"Invalid action item: {error_message}"}
             except (BrowserToolError, EditorToolError) as e: 
-                self.current_observation_text = f"Error executing tool {tool_name}: {e}"
-                self.latest_status_info = {"success": False, "message": f"Tool error with {tool_name}: {e}"}
+                error_message = str(e)
+                formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nError: {error_message}"
+                observation_parts.append(formatted_action_observation)
+                self.latest_status_info = {"success": False, "message": f"Tool error with {tool_name}: {error_message}"}
             except TypeError as e: 
-                self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args}"
-                self.latest_status_info = {"success": False, "message": f"Tool argument mismatch for {tool_name}: {e}"}
-            except Exception as e: # Catch any other unexpected error
-                self.current_observation_text = f"Unexpected error processing action '{action_json_string[:100]}...': {str(e)}"
-                self.latest_status_info = {"success": False, "message": f"Unexpected error with action: {e}"}
+                error_message = str(e)
+                formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nError: Argument mismatch for tool {tool_name}. Details: {error_message}"
+                observation_parts.append(formatted_action_observation)
+                self.latest_status_info = {"success": False, "message": f"Tool argument mismatch for {tool_name}: {error_message}"}
+            except Exception as e: 
+                error_message = str(e)
+                formatted_action_observation = f"{i+1}. {calling_tool_line}\n\nError: Unexpected error: {error_message}"
+                observation_parts.append(formatted_action_observation)
+                self.latest_status_info = {"success": False, "message": f"Unexpected error with tool {tool_name}: {error_message}"}
             
             if tool_executed_successfully_item:
                 tool_executed_successfully_overall = True
+        
+        # After loop, assemble current_observation_text from parts
+        if observation_parts:
+            self.current_observation_text = "\n\n".join(observation_parts)
+        elif not actions: # Already handled, but as a safeguard for current_observation_text
+             self.current_observation_text = "No actions were performed."
+        else: # Actions list was not empty, but observation_parts is - e.g. all actions failed before appending.
+              # self.latest_status_info should hold the last error.
+              # self.current_observation_text might still hold text from a *previous* step if not cleared.
+              # For safety, set a generic message if nothing specific was recorded.
+              if self.latest_status_info.get("message") == "Processing actions.": # No specific error/success
+                   self.current_observation_text = "Actions processed, but no specific observations were generated."
+              # else, if there were errors, observation_parts should not be empty. This is a fallback.
 
-        # After loop, final checks for max_steps
+
         if not self.task_completed and self.current_step >= self.max_steps:
             self.task_completed = True
-            self.current_observation_text += "\nMax steps reached. Episode terminated."
+            # Append to the potentially multi-part observation
+            self.current_observation_text += "\n\nMax steps reached. Episode terminated." 
             self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
         
-        # Update overall status info if not already set by a terminating event or specific error
         if not self.task_completed and self.latest_status_info.get("message") == "Processing actions.":
             if tool_executed_successfully_overall:
                 self.latest_status_info = {"success": True, "message": "Tool(s) executed."}
-            else:
-                # If no tool succeeded but loop finished (e.g. all actions failed parsing/execution individually)
-                # The latest_status_info would reflect the last error, which is fine.
-                # If actions list was processed and no specific error/success was set (e.g. all were valid but no-op),
-                # this default could be "Actions processed, no specific outcome."
-                # For now, if not success, it implies some failure or no-op, covered by last error.
-                pass
+            # If not overall success and message is still "Processing actions", means no tool succeeded and no specific error message
+            # was set for the whole batch (e.g. all actions were valid but no-op, or all failed individually and their errors were logged in parts)
+            # In this case, self.latest_status_info might still be the last individual error, which is fine.
+            # Or, if all individual actions somehow led to no status update (unlikely), set a generic one.
+            elif not tool_executed_successfully_overall :
+                 self.latest_status_info = {"success": False, "message": "No tool executed successfully or actions resulted in no specific outcome."}
 
 
-        # Print final state for this step using the new 'actions' list variable
         print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{actions}', Done={self.task_completed}")
         print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
 
