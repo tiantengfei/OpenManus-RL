@@ -108,152 +108,121 @@ class LocalToolExecutor:
     def get_current_observation(self) -> str:
         return self.current_observation_text
 
-    async def process_action(self, action_str: str) -> None:
-        self.current_step += 1
-        tool_executed_successfully_overall = False # Tracks if any tool in sequence ran ok
+    async def process_action(self, actions: List[str]) -> None: # Signature changed
+        self.current_step += 1 # Increment step counter once per call
+        tool_executed_successfully_overall = False
 
-        if self.task_completed: # Prevent action if already completed (e.g. from previous step)
+        if self.task_completed:
             self.current_observation_text = "Tried to act on a completed task. No state change."
             print("[LocalToolExecutor] Warning: Action processed on already completed task.")
             return
 
-        parsed_actions = []
-        # Initial status assumes success unless parsing fails or an error occurs.
-        # If action_str is "[]", this status will persist if no other error.
-        initial_parse_status = {"success": True, "message": "Actions parsed."} 
-
-        try:
-            data = json.loads(action_str)
-            if isinstance(data, list):
-                if not data: # Empty list of actions
-                    self.current_observation_text = "Received an empty list of actions."
-                    # Explicitly set status for empty list, will be checked later
-                    initial_parse_status = {"success": True, "message": "Empty action list processed."}
-                else:
-                    parsed_actions = data
-            elif isinstance(data, dict):
-                parsed_actions = [data] # Treat single dict as a list of one
-            else:
-                # Not a list or dict after JSON parsing
-                raise ToolError("Action payload must be a JSON object or an array of JSON objects.")
-        except json.JSONDecodeError:
-            self.current_observation_text = f"Error: Action is not a valid JSON string: '{action_str}'."
-            initial_parse_status = {"success": False, "message": "Action JSON parsing error."}
-        except ToolError as e:
-            self.current_observation_text = str(e)
-            initial_parse_status = {"success": False, "message": f"Action format error: {e}"}
-        except Exception as e: # Catch any other unexpected error during parsing
-            self.current_observation_text = f"Unexpected error parsing action: {str(e)}"
-            initial_parse_status = {"success": False, "message": f"Unexpected action parsing error: {e}"}
-        
-        self.latest_status_info = initial_parse_status # Set status based on parsing outcome
-
-        # If parsing failed or resulted in no actions (and it wasn't an explicit empty list that succeeded)
-        if not parsed_actions and not (isinstance(initial_parse_status.get("message"), str) and "Empty action list processed" in initial_parse_status["message"]):
+        # Handle empty input actions list
+        if not actions:
+            self.current_observation_text = "Received an empty list of actions."
+            self.latest_status_info = {"success": True, "message": "Empty action list processed."}
+            # Max steps check for empty actions
             if not self.task_completed and self.current_step >= self.max_steps:
                 self.task_completed = True
-                self.current_observation_text += "\nMax steps reached. Episode terminated due to parsing failure at max steps."
+                self.current_observation_text += "\nMax steps reached. Episode terminated due to empty actions at max steps."
                 self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
-            # Log final state for this step and return
-            print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{action_str}', Done={self.task_completed}")
+            print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{actions}', Done={self.task_completed}")
             print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
             return
+            
+        # Default status for non-empty actions list; will be updated by individual actions
+        self.latest_status_info = {"success": False, "message": "Processing actions."}
 
-        for action_item in parsed_actions:
+        for action_json_string in actions:
             if self.task_completed: # If a previous tool call in this sequence already terminated
-                break
+                break 
 
-            tool_executed_successfully_item = False # For current item in sequence
+            action_item = None
+            tool_executed_successfully_item = False
+            
             try:
-                if not isinstance(action_item, dict): # Each item in array must be a dict
-                    raise ToolError(f"Invalid action item: expected a JSON object, got {type(action_item)}. Item: '{action_item}'")
-                
+                # Parse the individual action string
+                action_item = json.loads(action_json_string)
+                if not isinstance(action_item, dict):
+                    raise ToolError(f"Parsed action is not a dictionary. Action string: '{action_json_string}'")
+
                 tool_name = action_item.get("function_name")
                 if not tool_name:
                     raise ToolError("Missing 'function_name' in action item.")
 
                 args = action_item.get("arguments")
-                if args is None:
-                    args = {}
+                if args is None: args = {}
                 elif not isinstance(args, dict):
-                    if isinstance(args, str):
+                    if isinstance(args, str): # Try to parse if arguments is a string
                         try:
                             args = json.loads(args)
                             if not isinstance(args, dict):
-                                print(f"[LocalToolExecutor] Warning: 'arguments' in item, when parsed from string, was not a dict. Type: {type(args)}. Item: {action_item}")
-                                args = {} # Default to empty if structure is wrong
+                                print(f"[LocalToolExecutor] Warning: Parsed 'arguments' string was not a dict. Action: {action_json_string}")
+                                args = {}
                         except json.JSONDecodeError:
-                            print(f"[LocalToolExecutor] Warning: 'arguments' in item was a string but not valid JSON: {args}. Item: {action_item}")
-                            args = {} # Default to empty
-                    else:
-                        print(f"[LocalToolExecutor] Warning: 'arguments' in item was not a dict or JSON string. Type: {type(args)}. Item: {action_item}")
-                        args = {} # Default to empty
+                            print(f"[LocalToolExecutor] Warning: 'arguments' string is not valid JSON. Action: {action_json_string}")
+                            args = {}
+                    else: # Not a dict or string
+                        print(f"[LocalToolExecutor] Warning: 'arguments' is not a dict or JSON string. Action: {action_json_string}")
+                        args = {}
                 
                 if tool_name in self.tools:
                     tool = self.tools[tool_name]
-                    try:
-                        self.current_observation_text = await tool.execute(**args)
-                        tool_executed_successfully_item = True 
-                        self.latest_status_info = {"success": True, "message": f"Tool {tool_name} executed."} # Default success for this item
+                    self.current_observation_text = await tool.execute(**args) # await tool execution
+                    tool_executed_successfully_item = True
+                    self.latest_status_info = {"success": True, "message": f"Tool {tool_name} executed."}
 
-                        if tool_name == self.terminate_tool.name:
-                            self.task_completed = True # Mark task as completed by terminate tool
-                            status_arg = args.get("status", "success")
-                            self.latest_status_info = {
-                                "success": status_arg == "success",
-                                "message": f"Terminated by agent with status: {status_arg}"
-                            }
-                            # No need to break here, loop condition `if self.task_completed:` will handle it.
-                    
-                    # Specific tool errors for the current item
-                    except (BrowserToolError, EditorToolError) as e: # Catch specific tool errors first
-                        self.current_observation_text = f"Error executing tool {tool_name}: {e}"
-                        self.latest_status_info = {"success": False, "message": f"Tool error with {tool_name}: {e}"}
-                    except TypeError as e: # Catch argument mismatch errors for the current item
-                        self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args}"
-                        self.latest_status_info = {"success": False, "message": f"Tool argument mismatch for {tool_name}: {e}"}
-                    except Exception as e: # Catch any other unexpected error during this item's tool execution
-                        self.current_observation_text = f"Unexpected error executing tool {tool_name}: {str(e)}"
-                        self.latest_status_info = {"success": False, "message": f"Unexpected error with tool {tool_name}: {e}"}
-                else: # Unknown tool for the current item
+                    if tool_name == self.terminate_tool.name:
+                        self.task_completed = True
+                        status_arg = args.get("status", "success")
+                        self.latest_status_info = {"success": status_arg == "success", "message": f"Terminated by agent with status: {status_arg}"}
+                        break # Break from processing further actions in the list
+                else:
                     self.current_observation_text = f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self.tools.keys())}"
                     self.latest_status_info = {"success": False, "message": f"Unknown tool: {tool_name}."}
 
-            # Errors from validating the action_item structure itself (e.g., not a dict, missing function_name)
-            except ToolError as e: 
+            except json.JSONDecodeError:
+                self.current_observation_text = f"Error: Action is not a valid JSON string: '{action_json_string}'."
+                self.latest_status_info = {"success": False, "message": "Action JSON parsing error."}
+                continue # Move to the next action string if current one is unparsable
+            except ToolError as e:
                 self.current_observation_text = f"Error processing action item '{str(action_item)[:100]}...': {e}"
                 self.latest_status_info = {"success": False, "message": f"Invalid action item: {e}"}
-            except Exception as e: # Catch any other unexpected error during this item's processing (outside tool.execute)
-                self.current_observation_text = f"Unexpected error processing action item '{str(action_item)[:100]}...': {str(e)}"
-                self.latest_status_info = {"success": False, "message": f"Unexpected error with item: {e}"}
+            # Specific tool execution errors
+            except (BrowserToolError, EditorToolError) as e: 
+                self.current_observation_text = f"Error executing tool {tool_name}: {e}"
+                self.latest_status_info = {"success": False, "message": f"Tool error with {tool_name}: {e}"}
+            except TypeError as e: 
+                self.current_observation_text = f"Error: Argument mismatch for tool {tool_name}. Details: {e}. Args provided: {args}"
+                self.latest_status_info = {"success": False, "message": f"Tool argument mismatch for {tool_name}: {e}"}
+            except Exception as e: # Catch any other unexpected error
+                self.current_observation_text = f"Unexpected error processing action '{action_json_string[:100]}...': {str(e)}"
+                self.latest_status_info = {"success": False, "message": f"Unexpected error with action: {e}"}
             
             if tool_executed_successfully_item:
-                 tool_executed_successfully_overall = True
+                tool_executed_successfully_overall = True
 
-        # After loop, final checks
+        # After loop, final checks for max_steps
         if not self.task_completed and self.current_step >= self.max_steps:
             self.task_completed = True
-            # Append to observation rather than replacing, so prior tool output isn't lost if multiple tools ran
             self.current_observation_text += "\nMax steps reached. Episode terminated."
             self.latest_status_info = {"success": False, "message": "Terminated due to max steps."}
         
-        # Update overall status info if loop completed and no specific error/termination occurred that already set it.
-        # This logic ensures that if the loop was for an empty list `[]`, the status remains "Empty action list processed."
-        # If tools ran, it defaults to "Tool(s) executed" if no specific error/termination message was set by the last action.
-        if not self.task_completed: # Only if not already completed by a tool or max_steps
-            if parsed_actions and tool_executed_successfully_overall:
-                 # If the latest_status_info is still the one from successful parsing of non-empty list,
-                 # or if it's a generic success from the last tool, make it more general.
-                if self.latest_status_info.get("message") == "Actions parsed." or \
-                   (self.latest_status_info.get("success") and "executed" in self.latest_status_info.get("message", "")):
-                     self.latest_status_info = {"success": True, "message": "Tool(s) executed."}
-            elif not parsed_actions and self.latest_status_info.get("message") == "Empty action list processed.":
-                pass # Keep the "Empty action list processed" status
-            # If parsing failed, latest_status_info is already set to the parsing error.
-            # If a tool failed, latest_status_info reflects that tool's error.
+        # Update overall status info if not already set by a terminating event or specific error
+        if not self.task_completed and self.latest_status_info.get("message") == "Processing actions.":
+            if tool_executed_successfully_overall:
+                self.latest_status_info = {"success": True, "message": "Tool(s) executed."}
+            else:
+                # If no tool succeeded but loop finished (e.g. all actions failed parsing/execution individually)
+                # The latest_status_info would reflect the last error, which is fine.
+                # If actions list was processed and no specific error/success was set (e.g. all were valid but no-op),
+                # this default could be "Actions processed, no specific outcome."
+                # For now, if not success, it implies some failure or no-op, covered by last error.
+                pass
 
-        # Print final state for this step
-        print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{action_str}', Done={self.task_completed}")
+
+        # Print final state for this step using the new 'actions' list variable
+        print(f"[LocalToolExecutor] Step {self.current_step}: Action(s)='{actions}', Done={self.task_completed}")
         print(f"[LocalToolExecutor] Observation: {self.current_observation_text[:200]}...")
 
     def is_done(self) -> bool:
@@ -314,7 +283,7 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
         print("[OpenManusLocalEnvClient] Observe called before reset or executor is None.")
         return "Environment not initialized. Please call reset."
 
-    def step(self, action: str) -> StepOutput: # Made synchronous
+    def step(self, actions: List[str]) -> StepOutput: # Signature changed
         if not self.tool_executor:
             print("[OpenManusLocalEnvClient] Step called before reset or executor is None.")
             return StepOutput(state="Error: Tool executor not initialized.", reward=0.0, done=True)
@@ -322,7 +291,7 @@ class OpenManusLocalEnvClient(BaseEnvClient): # Renamed
         try:
             # Run the async process_action method using asyncio.run()
             # This creates a new event loop, runs the coroutine, and closes the loop.
-            asyncio.run(self.tool_executor.process_action(action))
+            asyncio.run(self.tool_executor.process_action(actions)) # Argument changed
         except RuntimeError as e:
             if "asyncio.run() cannot be called from a running event loop" in str(e):
                 print("[OpenManusLocalEnvClient][ERROR] asyncio.run() cannot be called from a running event loop. This indicates a conflict with the current threading/async setup, possibly within Ray. The application's async model needs review for proper integration.")
