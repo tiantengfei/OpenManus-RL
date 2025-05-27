@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional, Dict, Literal
+from typing import Any, Mapping, Optional, Dict, Literal, List
 import json
 import re # For parsing tool calls
 import asyncio
