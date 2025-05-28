@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed # For parallel r
 from verl.utils.tracking import Tracking
 from omegaconf import DictConfig # Import DictConfig for type hint
 import numpy as np
+from openmanus_rl.agentgym.agentenv.agentenv.envs.openmanus_env import SUMMARY_HISTORY_PROMPT
 
 @dataclass
 class AgentConfig:
@@ -215,6 +216,7 @@ class OpenManusAgent:
         """
         trajectory = []
         step_rewards = []  # Store rewards per step
+        current_episode_summaries = []
         final_reward = 0.0 # Reward from the *last step*
         final_env_score = 0.0 # Final score from env info
         done = False
@@ -365,22 +367,170 @@ class OpenManusAgent:
 
                 # Process next observation
                 if not done:
-                    # --- Handle OpenManus next_prompt for subsequent observations ---
-                    #openmanus_step_next_prompt = info.get('next_prompt')
-                    trajectory.append({"from": "env", "value": next_obs_text})
-                    next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
-                    if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
-                        trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
-                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
-                    next_obs_text += "<|im_start|>assistant\n"
-                    next_obs_ids = self.tokenizer(next_obs_text, return_tensors='pt', add_special_tokens=False)['input_ids']
-                    # Ensure tensors are concatenated on the same device (e.g., CPU or model's device if needed later)
-                    current_input_ids = torch.cat([
-                        current_input_ids.to(response_ids.device), # Move to same device as response_ids
-                        response_ids,
-                        next_obs_ids.to(response_ids.device) # Move to same device
-                    ], dim=1)
+                    # /// START SUMMARIZATION LOGIC ///
+                    # 1. Construct current_step_content (placeholder {2})
+                    # We need:
+                    # - The agent's previous thought/response: `response_text` (available from earlier in the loop)
+                    # - The actions executed: `actions_to_execute` (available from earlier)
+                    # - The observation received from the environment: `next_obs_text` (this is the raw observation *before* formatting for the next prompt)
+                    #   The variable `step_output.state` holds the raw observation.
+
+                    raw_env_observation = step_output.state # The observation from the environment
+                    
+                    # Ensure actions_to_execute is a string for the summary. If it's a list, convert it.
+                    actions_string = ""
+                    if isinstance(actions_to_execute, list):
+                        actions_string = "\n".join(actions_to_execute) # Or json.dumps(actions_to_execute)
+                    elif isinstance(actions_to_execute, str):
+                        actions_string = actions_to_execute
+                    
+                    current_step_content = f"Agent's last response: {response_text}\nExecuted Actions: {actions_string}\nObservation from environment: {raw_env_observation}"
+
+                    # 2. Get previous_summary (placeholder {1})
+                    previous_summary = ""
+                    if current_episode_summaries: # Check if the list is not empty
+                        previous_summary = current_episode_summaries[-1]
+
+                    # 3. Format Summarization Prompt
+                    # initial_prompt_text is available from the start of _run_single_rollout
+                    # initial_prompt_text at the start of the function is the *original user goal*, not the full initial text with system prompts etc.
+                    # We need to ensure initial_prompt_text here is just the user goal.
+                    # Decoding initial_prompt_ids[0] gives the original goal.
+                    user_initial_request_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
+                    summary_prompt_text = SUMMARY_HISTORY_PROMPT.format(user_initial_request_text, previous_summary, current_step_content)
+
+                    # 4. Tokenize Summarization Prompt
+                    summary_input_ids = self.tokenizer(summary_prompt_text, return_tensors='pt', add_special_tokens=False, truncation=True, max_length=self.config.max_prompt_length)['input_ids']
+                    # Ensure it's on the correct device, matching how other inputs are handled if necessary, though generate_sequences might handle device placement.
+                    # For now, assume CPU tensor is fine as input to DataProto.
+
+                    # 5. Prepare DataProto for Summarization
+                    summary_attention_mask = self.tensor_fn.create_attention_mask(summary_input_ids)
+                    summary_position_ids = self.tensor_fn.create_position_ids(summary_attention_mask)
+                    
+                    summary_gen_input_proto = DataProto.from_dict({
+                        'input_ids': summary_input_ids,
+                        'attention_mask': summary_attention_mask,
+                        'position_ids': summary_position_ids
+                    })
+
+                    # Use a similar generation config as for actions, or define a specific one for summaries if needed
+                    summary_generation_config = GenerationConfig(
+                        max_new_tokens=self.config.max_response_length, # Or a different max length for summaries
+                        eos_token_id=self.tokenizer.eos_token_id,
+                        pad_token_id=self.tokenizer.pad_token_id,
+                        temperature=1.0, # Potentially lower temperature for factual summarization
+                        do_sample=True # Or False for more deterministic summaries
+                    )
+                    if not hasattr(summary_gen_input_proto, 'meta_info'):
+                        summary_gen_input_proto.meta_info = {}
+                    summary_gen_input_proto.meta_info['generation_config'] = summary_generation_config
+                    
+                    # Handle padding for world_size > 1 if necessary, like in the main generation call
+                    summary_world_size = self.actor_rollout_wg.world_size
+                    summary_original_size = summary_input_ids.shape[0] # Should be 1
+                    summary_padded_gen_input_proto = summary_gen_input_proto
+                    summary_padding_size = 0
+                    if summary_world_size > 1 and summary_original_size % summary_world_size != 0:
+                        summary_padding_size = summary_world_size - (summary_original_size % summary_world_size)
+                        summary_padded_batch = {}
+                        for k, v in summary_gen_input_proto.batch.items():
+                            pad_sequence = v[0:1].repeat(summary_padding_size, *[1] * (len(v.shape) - 1))
+                            summary_padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
+                        summary_padded_gen_input_proto = DataProto.from_dict(summary_padded_batch)
+                        if hasattr(summary_gen_input_proto, 'meta_info'):
+                            summary_padded_gen_input_proto.meta_info = summary_gen_input_proto.meta_info.copy()
+                        summary_padded_gen_input_proto.meta_info['generation_config'] = summary_generation_config # Ensure config is on padded proto
+
+                    # 6. Call generate_sequences for Summarization
+                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generating summary...")
+                    summary_output_proto = self.actor_rollout_wg.generate_sequences(summary_padded_gen_input_proto)
+                    summary_response_ids = summary_output_proto.batch['responses']
+
+                    if summary_padding_size > 0:
+                        summary_response_ids = summary_response_ids[:-summary_padding_size]
+
+                    # 7. Decode the response to get the summary text
+                    decoded_summary = self.tokenizer.decode(summary_response_ids[0], skip_special_tokens=True).strip()
+                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generated Summary: {decoded_summary[:100]}...")
+
+                    # 8. Store Summary
+                    current_episode_summaries.append(decoded_summary)
+
+                    # /// END SUMMARIZATION LOGIC ///
+                    
+                    # --- START NEW PROMPT CONSTRUCTION LOGIC FOR ACTION GENERATION ---
+                    
+                    # 1. Log current raw observation to trajectory
+                    raw_env_observation_for_next_step = step_output.state 
+                    trajectory.append({"from": "env", "value": raw_env_observation_for_next_step})
+
+                    # 2. Retrieve latest summary
+                    latest_summary = ""
+                    if current_episode_summaries:
+                        latest_summary = current_episode_summaries[-1]
+
+                    # 3. Prepare components for the new prompt text
+                    user_initial_request_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
+                    
+                    formatted_observation_for_prompt = f"<|im_start|>tool\n{raw_env_observation_for_next_step}<|im_end|>\n"
+
+                    # `openmanus_initial_next_prompt` was defined at the start of _run_single_rollout from reset_info.
+                    # `openmanus_step_next_prompt` was set to `openmanus_initial_next_prompt` before summarization.
+                    # We use `openmanus_initial_next_prompt` here for consistency with previous logic.
+                    if openmanus_initial_next_prompt and isinstance(openmanus_initial_next_prompt, str):
+                        trajectory.append({"from": "env", "value": openmanus_initial_next_prompt}) # Log it as it's part of the prompt
+                        formatted_observation_for_prompt += f"<|im_start|>user\n{openmanus_initial_next_prompt}<|im_end|>\n"
+                    
+                    action_prompt_text = ""
+                    if latest_summary: # This means it's not the first action generation pass
+                        action_prompt_text = (
+                            f"用户的任务如下:\n\n{user_initial_request_text}\n\n"
+                            f"已获取的信息和完成的操作步骤如下:\n{latest_summary}\n\n"
+                            f"基于以上总结，请继续任务。\n" 
+                            f"{formatted_observation_for_prompt}" 
+                            f"<|im_start|>assistant\n" 
+                        )
+                    else: 
+                        # This case should ideally only be for the first action generation after the initial observation,
+                        # as summaries are generated each turn if not done.
+                        # `current_input_ids` here is the input that *produced* `response_text`.
+                        # `response_text` is the latest LLM response.
+                        history_that_led_to_current_response = self.tokenizer.decode(current_input_ids[0], skip_special_tokens=True)
+                        action_prompt_text = (
+                            f"{history_that_led_to_current_response}\n" 
+                            f"{response_text}\n" 
+                            f"{formatted_observation_for_prompt}" 
+                            f"<|im_start|>assistant\n"
+                        )
+                    
+                    print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Constructed Action Prompt (first 150 chars): {action_prompt_text[:150]}...")
+
+                    # 4. Tokenize the new prompt
+                    new_current_input_ids = self.tokenizer(action_prompt_text, return_tensors='pt', add_special_tokens=False, truncation=True, max_length=self.config.max_prompt_length)['input_ids']
+                    
+                    # 5. Update current_input_ids (this replaces the torch.cat line)
+                    current_input_ids = new_current_input_ids.to(response_ids.device) # Ensure it's on the same device as response_ids if that was a pattern
+
+                    # --- END NEW PROMPT CONSTRUCTION LOGIC ---
+
+                    # Old logic (commented out for clarity, will be removed by diff)
+                    # # --- Handle OpenManus next_prompt for subsequent observations ---
+                    # #openmanus_step_next_prompt = info.get('next_prompt')
+                    # trajectory.append({"from": "env", "value": next_obs_text}) # next_obs_text here is still the raw observation from step_output.state
+                    # next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n" # now next_obs_text is formatted
+                    # if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
+                    #     next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                    #     trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
+                    # print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
+                    # next_obs_text += "<|im_start|>assistant\n"
+                    # next_obs_ids = self.tokenizer(next_obs_text, return_tensors='pt', add_special_tokens=False)['input_ids']
+                    # # Ensure tensors are concatenated on the same device (e.g., CPU or model's device if needed later)
+                    # current_input_ids = torch.cat([
+                    #     current_input_ids.to(response_ids.device), # Move to same device as response_ids
+                    #     response_ids,
+                    #     next_obs_ids.to(response_ids.device) # Move to same device
+                    # ], dim=1)
                 else:
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Done received.")
                     break

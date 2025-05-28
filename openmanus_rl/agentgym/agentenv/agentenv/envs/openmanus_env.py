@@ -26,6 +26,34 @@ Based on user needs, proactively select the most appropriate tool or combination
 If you want to stop the interaction at any point, use the `terminate` tool/function call.
 """
 
+SUMMARY_HISTORY_PROMPT = """用户请求了解的信息如下：
+{0}。
+
+当前采用分步方式完成任务。在此步骤之前，历史已提炼的内容包括：
+{1}。
+
+当前步骤获取到的内容如下：
+{2}。
+
+现在你是一位内容理解专家，负责信息内容的理解，内容筛选，内容总结。
+现在请你
+1、理解用户的请求，并对获取的所有信息（历史内容 + 当前步骤内容）进行判断和筛选，保留与用户原始请求最相关、最核心的内容。例如，对于“山西13天古建游”，整合所有已获取的景点推荐、路线建议、交通信息估算等。
+2. 对所有操作步骤进行总结，如果某个核心查询（如“山西古建景点推荐”、“太原到大同交通方式”）在历史步骤中已执行过，明确标注。
+3. **关键判断:** 基于整合后的信息，**明确判断**当前用户请求 '{0}' 所需的核心信息（例如，生成建议性Timeline所需的景点列表、路线逻辑、交通估算等）是否**已经基本足够**在“已获取的信息”中找到。请在总结末尾使用以下标记之一：
+    *   `[Data Sufficient for Planning]`：如果信息已足够支撑下一步的Timeline生成。
+    *   `[Data Insufficient for Planning]`：如果仍需通过工具（主要是WebSearch）获取关键信息才能生成Timeline。
+
+要求：
+1、只根据当前步骤的内容和历史已提炼的内容来得到最终结果，不要新增其他东西。
+2、过滤掉明显不合理、重复冗余的查询过程描述，专注于已获取的事实信息和规划所需要素。
+3、返回形式为：
+已获取的信息：[整合后的核心信息列表，用于规划Timeline]
+已进行的操作步骤：[步骤总结，标注重复查询]
+信息判断：[Data Sufficient for Planning] 或 [Data Insufficient for Planning]
+
+注意：只返回总结后的内容即可，不用返回你的思考过程。
+"""
+
 # Define a common ToolError if not already centralized, or use specific ones
 # For now, specific tool errors can be caught, or a general one if defined in base.py
 class ToolError(Exception): # General error for the executor
