@@ -238,6 +238,7 @@ class OpenManusAgent:
 
             # Handle initial observation
             initial_prompt_text = self.tokenizer.decode(initial_prompt_ids[0], skip_special_tokens=True)
+            print("inital_prompt_text:", initial_prompt_text)
             if not initial_obs_text:
                 # print(f"[Agent._run_single_rollout][{task_idx} @ {client.env_server_base}] Warning: Received empty initial observation. Using initial prompt from batch.")
                 # Use the initial prompt text passed in
@@ -369,7 +370,7 @@ class OpenManusAgent:
                     trajectory.append({"from": "env", "value": next_obs_text})
                     next_obs_text = f"<|im_start|>tool\n{next_obs_text}<|im_end|>\n"
                     if openmanus_step_next_prompt and isinstance(openmanus_step_next_prompt, str):
-                        next_obs_text = f"{next_obs_next}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
+                        next_obs_text = f"{next_obs_text}<|im_start|>user\n{openmanus_step_next_prompt}<|im_end|>\n"
                         trajectory.append({"from": "env", "value": openmanus_step_next_prompt})
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Next Obs (potentially with next_prompt): {next_obs_text[:150]}...") # Increased log length
                     next_obs_text += "<|im_start|>assistant\n"
@@ -899,6 +900,7 @@ class OpenManusAgent:
         """
         content = ""
         actions_list = []
+        print("prediction:", prediction)
 
         if not isinstance(prediction, str):
             return ("", [])
@@ -926,4 +928,6 @@ class OpenManusAgent:
             content = prediction.strip()
             # actions_list remains empty
             
+        print("content:", content)
+        print("actions_list:", actions_list)
         return content, actions_list

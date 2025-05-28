@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Optional, Dict, Literal
+from typing import Any, Mapping, Optional, Dict, Literal, List
 import json
 import re # For parsing tool calls
 import asyncio
@@ -149,10 +149,10 @@ class LocalToolExecutor:
                 if not isinstance(action_item, dict):
                     raise ToolError(f"Parsed action is not a dictionary. Action string: '{action_json_string}'")
 
-                tool_name = action_item.get("function_name")
+                tool_name = action_item.get("name")
                 if not tool_name:
                     # Specific error for missing function_name, before calling_tool_line
-                    error_message = f"Error: Missing 'function_name' in action: {action_json_string}"
+                    error_message = f"Error: Missing 'name' in action: {action_json_string}"
                     observation_parts.append(f"{i+1}. {error_message}")
                     self.latest_status_info = {"success": False, "message": "Missing 'function_name'."}
                     continue # to next action_json_string
