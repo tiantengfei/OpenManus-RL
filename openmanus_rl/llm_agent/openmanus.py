@@ -1,5 +1,6 @@
 import torch
 import re
+import gc # Added for memory management
 # import json # No longer needed by postprocess_predictions, and seems unused elsewhere in this file.
 from collections import defaultdict
 import os
@@ -308,17 +309,24 @@ class OpenManusAgent:
 
                 # Generation happens on the actor worker group's device
                 gen_output_proto = self.actor_rollout_wg.generate_sequences(padded_gen_input_proto)
-                del padded_gen_input_proto
-                # del gen_input_proto # This was not deleted in the instructions, but consider if it should be.
-                # response_ids = gen_output_proto.batch['response_ids'] # Original line causing KeyError
-                response_ids = gen_output_proto.batch['responses'] # Use the correct key ('responses') assuming it holds IDs
+                response_ids = gen_output_proto.batch['responses'].clone() # Clone to ensure it's not a view
 
                 if padding_size > 0:
                      response_ids = response_ids[:-padding_size]
 
+                # Explicitly delete tensors and protos for action generation
+                del gen_output_proto.batch # Or iterate and del tensors if direct del of batch is problematic
+                del gen_output_proto
+                if 'padded_batch' in locals(): # If padding was applied
+                    del padded_batch # This held the intermediate padded tensors
+                    del padded_gen_input_proto.batch
+                    del padded_gen_input_proto
+                elif 'gen_input_proto' in locals(): # gen_input_proto always exists if padded_gen_input_proto does not
+                    del gen_input_proto.batch
+                    del gen_input_proto
+
                 # Decode the response IDs to get the text for the trajectory
                 response_text = self.tokenizer.decode(response_ids[0], skip_special_tokens=True)
-                del response_ids
 
                 # print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Response: {response_text[:100]}...")
                 trajectory.append({"from": "gpt", "value": response_text})
@@ -448,19 +456,24 @@ class OpenManusAgent:
                     # 6. Call generate_sequences for Summarization
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generating summary...")
                     summary_output_proto = self.actor_rollout_wg.generate_sequences(summary_padded_gen_input_proto)
-                    del summary_padded_gen_input_proto
-                    del summary_input_ids
-                    del summary_attention_mask
-                    del summary_position_ids
-                    del summary_gen_input_proto
-                    summary_response_ids = summary_output_proto.batch['responses']
+                    summary_response_ids = summary_output_proto.batch['responses'].clone() # Clone to ensure it's not a view
 
                     if summary_padding_size > 0:
                         summary_response_ids = summary_response_ids[:-summary_padding_size]
 
+                    # Explicitly delete tensors and protos for summary generation
+                    del summary_output_proto.batch
+                    del summary_output_proto
+                    if 'summary_padded_batch' in locals(): # If padding was applied for summary
+                        del summary_padded_batch
+                        del summary_padded_gen_input_proto.batch
+                        del summary_padded_gen_input_proto
+                    elif 'summary_gen_input_proto' in locals(): # summary_gen_input_proto always exists
+                        del summary_gen_input_proto.batch
+                        del summary_gen_input_proto
+
                     # 7. Decode the response to get the summary text
                     decoded_summary = self.tokenizer.decode(summary_response_ids[0], skip_special_tokens=True).strip()
-                    del summary_response_ids
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generated Summary: {decoded_summary[:100]}...")
 
                     # 8. Store Summary
@@ -553,6 +566,19 @@ class OpenManusAgent:
             final_reward = 0.0
             final_env_score = 0.0
             done = True # Mark as done on error
+        finally:
+            # End of try block cleanup
+            if 'current_input_ids' in locals() and current_input_ids is not None: del current_input_ids
+            if 'current_attention_mask' in locals() and current_attention_mask is not None: del current_attention_mask
+            if 'current_position_ids' in locals() and current_position_ids is not None: del current_position_ids
+            if 'summary_input_ids' in locals() and summary_input_ids is not None: del summary_input_ids
+            if 'summary_attention_mask' in locals() and summary_attention_mask is not None: del summary_attention_mask
+            if 'summary_position_ids' in locals() and summary_position_ids is not None: del summary_position_ids
+            if 'new_current_input_ids' in locals() and new_current_input_ids is not None: del new_current_input_ids
+            # It's good practice to collect garbage and empty CUDA cache after a potentially intensive operation.
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Return the collected information
         return {
@@ -660,6 +686,15 @@ class OpenManusAgent:
 
         # --- Format Results into DataProto ---
         processed_data = self._convert_rollout_results_to_dataproto(valid_results, gen_batch)
+
+        # Clean up large intermediate lists
+        if 'rollout_results_list' in locals():
+            del rollout_results_list
+        if 'valid_results' in locals():
+            del valid_results
+        if 'futures' in locals(): # futures store references to tasks and potentially results indirectly
+            del futures
+        gc.collect()
 
         # --- CRITICAL: Add necessary meta_info parameters for compute_log_prob ---
         # These parameters are required by DataParallelActor.compute_log_prob
@@ -818,11 +853,7 @@ class OpenManusAgent:
 
             # --- Pad and Truncate --- 
             full_input_ids = torch.cat(conversation_ids_list, dim=1)
-            conversation_ids_list.clear()
-            # del conversation_ids_list
             full_info_mask = torch.cat(info_mask_parts, dim=1)
-            info_mask_parts.clear()
-            # del info_mask_parts
             seq_len = full_input_ids.shape[1]
             target_len = self.config.max_prompt_length
             padding_len = max(0, target_len - seq_len)
@@ -1013,21 +1044,26 @@ class OpenManusAgent:
             "responses": torch.cat(batch_responses, dim=0)
         }
 
+        # Clean up lists of individual tensors
+        if 'batch_input_ids' in locals():
+            del batch_input_ids
+        if 'batch_attention_mask' in locals():
+            del batch_attention_mask
+        if 'batch_position_ids' in locals():
+            del batch_position_ids
+        if 'batch_info_mask' in locals():
+            del batch_info_mask
+        if 'batch_token_level_rewards' in locals():
+            del batch_token_level_rewards
+        if 'batch_responses' in locals():
+            del batch_responses
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # Create DataProto and add metadata
         data_proto = DataProto.from_dict(final_batch)
-
-        batch_input_ids.clear()
-        del batch_input_ids
-        batch_attention_mask.clear()
-        del batch_attention_mask
-        batch_position_ids.clear()
-        del batch_position_ids
-        batch_info_mask.clear()
-        del batch_info_mask
-        batch_token_level_rewards.clear()
-        del batch_token_level_rewards
-        batch_responses.clear()
-        del batch_responses
         
         # Add collected statistics and per-rollout lists to final_meta_info, converting to tensors where appropriate
         # These will overwrite any keys with the same name inherited from original_batch.meta_info if they were lists per sample.
@@ -1057,6 +1093,59 @@ class OpenManusAgent:
         print(f"[Agent._convert_rollout] Final batch shapes: input_ids={final_batch['input_ids'].shape}, token_level_rewards={final_batch['token_level_rewards'].shape}, responses={final_batch['responses'].shape}")
         return data_proto
 
+    def shutdown(self):
+        """
+        Shuts down the agent's resources, including the thread pool executor,
+        environment clients, and the actor rollout worker group.
+        """
+        print("[OpenManusAgent] Shutting down...")
+
+        # Shut down the ThreadPoolExecutor
+        if hasattr(self, 'executor') and self.executor is not None:
+            try:
+                print("[OpenManusAgent] Shutting down ThreadPoolExecutor...")
+                self.executor.shutdown(wait=True)
+                print("[OpenManusAgent] ThreadPoolExecutor shutdown complete.")
+            except Exception as e:
+                print(f"[OpenManusAgent] Error shutting down ThreadPoolExecutor: {e}")
+                # import traceback # Already imported at file level
+                # traceback.print_exc()
+
+
+        # Close environment clients
+        if hasattr(self, 'clients') and self.clients is not None:
+            print(f"[OpenManusAgent] Closing {len(self.clients)} environment client(s)...")
+            for i, client in enumerate(self.clients):
+                client_name = f"Client {i} ({type(client).__name__})"
+                try:
+                    if hasattr(client, 'close') and callable(client.close):
+                        # print(f"[OpenManusAgent] Closing {client_name}...")
+                        client.close()
+                        # print(f"[OpenManusAgent] {client_name} closed.")
+                    else:
+                        print(f"[OpenManusAgent] {client_name} does not have a callable 'close' method.")
+                except Exception as e:
+                    print(f"[OpenManusAgent] Error closing {client_name}: {e}")
+                    # traceback.print_exc()
+            print("[OpenManusAgent] Finished closing environment clients.")
+
+        # Shut down or close actor_rollout_wg
+        if hasattr(self, 'actor_rollout_wg') and self.actor_rollout_wg is not None:
+            print("[OpenManusAgent] Shutting down actor_rollout_wg...")
+            try:
+                if hasattr(self.actor_rollout_wg, 'shutdown') and callable(self.actor_rollout_wg.shutdown):
+                    self.actor_rollout_wg.shutdown()
+                    print("[OpenManusAgent] actor_rollout_wg shutdown called.")
+                elif hasattr(self.actor_rollout_wg, 'close') and callable(self.actor_rollout_wg.close):
+                    self.actor_rollout_wg.close()
+                    print("[OpenManusAgent] actor_rollout_wg close called.")
+                else:
+                    print("[OpenManusAgent] actor_rollout_wg has no callable 'shutdown' or 'close' method.")
+            except Exception as e:
+                print(f"[OpenManusAgent] Error during actor_rollout_wg shutdown/close: {e}")
+                # traceback.print_exc()
+
+        print("[OpenManusAgent] Shutdown complete.")
 
     def postprocess_predictions(self, prediction: str) -> Tuple[str, List[str]]:
         """
