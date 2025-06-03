@@ -308,6 +308,8 @@ class OpenManusAgent:
 
                 # Generation happens on the actor worker group's device
                 gen_output_proto = self.actor_rollout_wg.generate_sequences(padded_gen_input_proto)
+                del padded_gen_input_proto
+                # del gen_input_proto # This was not deleted in the instructions, but consider if it should be.
                 # response_ids = gen_output_proto.batch['response_ids'] # Original line causing KeyError
                 response_ids = gen_output_proto.batch['responses'] # Use the correct key ('responses') assuming it holds IDs
 
@@ -316,6 +318,7 @@ class OpenManusAgent:
 
                 # Decode the response IDs to get the text for the trajectory
                 response_text = self.tokenizer.decode(response_ids[0], skip_special_tokens=True)
+                del response_ids
 
                 # print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Response: {response_text[:100]}...")
                 trajectory.append({"from": "gpt", "value": response_text})
@@ -445,6 +448,11 @@ class OpenManusAgent:
                     # 6. Call generate_sequences for Summarization
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generating summary...")
                     summary_output_proto = self.actor_rollout_wg.generate_sequences(summary_padded_gen_input_proto)
+                    del summary_padded_gen_input_proto
+                    del summary_input_ids
+                    del summary_attention_mask
+                    del summary_position_ids
+                    del summary_gen_input_proto
                     summary_response_ids = summary_output_proto.batch['responses']
 
                     if summary_padding_size > 0:
@@ -452,6 +460,7 @@ class OpenManusAgent:
 
                     # 7. Decode the response to get the summary text
                     decoded_summary = self.tokenizer.decode(summary_response_ids[0], skip_special_tokens=True).strip()
+                    del summary_response_ids
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generated Summary: {decoded_summary[:100]}...")
 
                     # 8. Store Summary
@@ -809,7 +818,11 @@ class OpenManusAgent:
 
             # --- Pad and Truncate --- 
             full_input_ids = torch.cat(conversation_ids_list, dim=1)
+            conversation_ids_list.clear()
+            # del conversation_ids_list
             full_info_mask = torch.cat(info_mask_parts, dim=1)
+            info_mask_parts.clear()
+            # del info_mask_parts
             seq_len = full_input_ids.shape[1]
             target_len = self.config.max_prompt_length
             padding_len = max(0, target_len - seq_len)
@@ -1002,6 +1015,19 @@ class OpenManusAgent:
 
         # Create DataProto and add metadata
         data_proto = DataProto.from_dict(final_batch)
+
+        batch_input_ids.clear()
+        del batch_input_ids
+        batch_attention_mask.clear()
+        del batch_attention_mask
+        batch_position_ids.clear()
+        del batch_position_ids
+        batch_info_mask.clear()
+        del batch_info_mask
+        batch_token_level_rewards.clear()
+        del batch_token_level_rewards
+        batch_responses.clear()
+        del batch_responses
         
         # Add collected statistics and per-rollout lists to final_meta_info, converting to tensors where appropriate
         # These will overwrite any keys with the same name inherited from original_batch.meta_info if they were lists per sample.
