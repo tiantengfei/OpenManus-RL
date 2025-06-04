@@ -277,23 +277,6 @@ class OpenManusAgent:
                     'position_ids': current_position_ids
                 }) # may need to put this on the correct device
 
-                world_size = self.actor_rollout_wg.world_size
-                original_size = 1 # We know batch size is 1 here
-                padded_gen_input_proto = gen_input_proto
-                padding_size = 0
-                if world_size > 1 and original_size % world_size != 0:
-                    padding_size = world_size - (original_size % world_size)
-                    padded_batch = {}
-                    for k, v in gen_input_proto.batch.items():
-                        # Use the single sequence as padding template
-                        pad_sequence = v[0:1].repeat(padding_size, *[1] * (len(v.shape) - 1))
-                        padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
-                    padded_gen_input_proto = DataProto.from_dict(padded_batch)
-                    # Copy meta_info if needed
-                    if hasattr(gen_input_proto, 'meta_info'):
-                         padded_gen_input_proto.meta_info = gen_input_proto.meta_info.copy()
-
-
                 # --- Prepare Generation Config --- 
                 generation_config = GenerationConfig(
                     max_new_tokens=self.config.max_response_length,
@@ -303,25 +286,25 @@ class OpenManusAgent:
                     do_sample=True
                 )
 
-                if not hasattr(padded_gen_input_proto, 'meta_info'):
-                    padded_gen_input_proto.meta_info = {}
-                padded_gen_input_proto.meta_info['generation_config'] = generation_config
+                if not hasattr(gen_input_proto, 'meta_info'): # Apply config to gen_input_proto directly
+                    gen_input_proto.meta_info = {}
+                gen_input_proto.meta_info['generation_config'] = generation_config
 
                 # Generation happens on the actor worker group's device
-                gen_output_proto = self.actor_rollout_wg.generate_sequences(padded_gen_input_proto)
+                # Pass gen_input_proto directly, padding logic removed
+                gen_output_proto = self.actor_rollout_wg.generate_sequences(gen_input_proto)
                 response_ids = gen_output_proto.batch['responses'].clone() # Clone to ensure it's not a view
 
-                if padding_size > 0:
-                     response_ids = response_ids[:-padding_size]
+                # Padding size and conditional slicing removed
+                # if padding_size > 0:
+                #      response_ids = response_ids[:-padding_size]
 
                 # Explicitly delete tensors and protos for action generation
-                del gen_output_proto.batch # Or iterate and del tensors if direct del of batch is problematic
+                del gen_output_proto.batch
                 del gen_output_proto
-                if 'padded_batch' in locals(): # If padding was applied
-                    del padded_batch # This held the intermediate padded tensors
-                    del padded_gen_input_proto.batch
-                    del padded_gen_input_proto
-                elif 'gen_input_proto' in locals(): # gen_input_proto always exists if padded_gen_input_proto does not
+                # Cleanup logic adjusted: padded_batch and padded_gen_input_proto related deletions removed
+                # gen_input_proto is the only input proto to clean up now.
+                if 'gen_input_proto' in locals():
                     del gen_input_proto.batch
                     del gen_input_proto
 
@@ -433,42 +416,32 @@ class OpenManusAgent:
                         temperature=1.0, # Potentially lower temperature for factual summarization
                         do_sample=True # Or False for more deterministic summaries
                     )
-                    if not hasattr(summary_gen_input_proto, 'meta_info'):
+                    if not hasattr(summary_gen_input_proto, 'meta_info'): # Apply config to summary_gen_input_proto directly
                         summary_gen_input_proto.meta_info = {}
                     summary_gen_input_proto.meta_info['generation_config'] = summary_generation_config
                     
-                    # Handle padding for world_size > 1 if necessary, like in the main generation call
-                    summary_world_size = self.actor_rollout_wg.world_size
-                    summary_original_size = summary_input_ids.shape[0] # Should be 1
-                    summary_padded_gen_input_proto = summary_gen_input_proto
-                    summary_padding_size = 0
-                    if summary_world_size > 1 and summary_original_size % summary_world_size != 0:
-                        summary_padding_size = summary_world_size - (summary_original_size % summary_world_size)
-                        summary_padded_batch = {}
-                        for k, v in summary_gen_input_proto.batch.items():
-                            pad_sequence = v[0:1].repeat(summary_padding_size, *[1] * (len(v.shape) - 1))
-                            summary_padded_batch[k] = torch.cat([v, pad_sequence], dim=0)
-                        summary_padded_gen_input_proto = DataProto.from_dict(summary_padded_batch)
-                        if hasattr(summary_gen_input_proto, 'meta_info'):
-                            summary_padded_gen_input_proto.meta_info = summary_gen_input_proto.meta_info.copy()
-                        summary_padded_gen_input_proto.meta_info['generation_config'] = summary_generation_config # Ensure config is on padded proto
+                    # Padding logic for summary generation removed
+                    # summary_world_size = self.actor_rollout_wg.world_size
+                    # ...
+                    # summary_padded_gen_input_proto = summary_gen_input_proto
+                    # ...
 
                     # 6. Call generate_sequences for Summarization
+                    # Pass summary_gen_input_proto directly
                     print(f"[Agent._run_single_rollout][{task_idx}][Turn {t+1}] Generating summary...")
-                    summary_output_proto = self.actor_rollout_wg.generate_sequences(summary_padded_gen_input_proto)
+                    summary_output_proto = self.actor_rollout_wg.generate_sequences(summary_gen_input_proto)
                     summary_response_ids = summary_output_proto.batch['responses'].clone() # Clone to ensure it's not a view
 
-                    if summary_padding_size > 0:
-                        summary_response_ids = summary_response_ids[:-summary_padding_size]
+                    # summary_padding_size and conditional slicing removed
+                    # if summary_padding_size > 0:
+                    #     summary_response_ids = summary_response_ids[:-summary_padding_size]
 
                     # Explicitly delete tensors and protos for summary generation
                     del summary_output_proto.batch
                     del summary_output_proto
-                    if 'summary_padded_batch' in locals(): # If padding was applied for summary
-                        del summary_padded_batch
-                        del summary_padded_gen_input_proto.batch
-                        del summary_padded_gen_input_proto
-                    elif 'summary_gen_input_proto' in locals(): # summary_gen_input_proto always exists
+                    # Cleanup logic adjusted: summary_padded_batch and summary_padded_gen_input_proto related deletions removed
+                    # summary_gen_input_proto is the only input proto to clean up now.
+                    if 'summary_gen_input_proto' in locals():
                         del summary_gen_input_proto.batch
                         del summary_gen_input_proto
 
